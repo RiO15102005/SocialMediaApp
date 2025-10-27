@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "7703937967",
+    "project_id": "zaloappflutter",
+    "storage_bucket": "zaloappflutter.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:7703937967:android:7d097d9df329321953255a",
+        "android_client_info": {
+          "package_name": "com.example.zalo_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBxdoPNPedbXE1bHMmuD5V1M8s-NobqLAw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,80 @@
+# ======================
+# Flutter + Firebase .gitignore
+# ======================
+
+# --- Miscellaneous ---
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# --- IntelliJ related ---
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# --- VS Code ---
+# Giữ lại .vscode nếu nhóm bạn muốn chia sẻ launch config
+#.vscode/
+
+# --- Flutter/Dart/Pub related ---
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+coverage/
+
+# --- Symbolication related ---
+app.*.symbols
+
+# --- Obfuscation related ---
+app.*.map.json
+
+# --- Android Studio build outputs ---
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# --- Android local files ---
+/android/.gradle/
+/android/app/build/
+/android/local.properties
+
+# --- iOS local files ---
+/ios/Pods/
+/ios/Flutter/Flutter.framework
+/ios/Flutter/Flutter.podspec
+/ios/Runner.xcworkspace/
+ios/.symlinks/
+/ios/Flutter/App.framework
+
+# --- macOS, Windows, Linux build ---
+/macos/Flutter/ephemeral/
+/windows/flutter/ephemeral/
+/linux/flutter/ephemeral/
+
+# --- Firebase Config (KHÔNG ignore để nhóm giữ kết nối Firebase) ---
+!android/app/google-services.json
+!ios/Runner/GoogleService-Info.plist
+!lib/firebase_options.dart
+
+# --- Bảo mật: KHÔNG push file nhạy cảm ---
+*.env
+*.key
+*.pem
+serviceAccountKey.json
+google-services-private.json
+firebase-debug.log
