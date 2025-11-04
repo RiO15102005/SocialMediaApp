@@ -31,6 +31,23 @@ class _LoginScreenState extends State<LoginScreen> {
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
+
+      // ✅ Thông báo đăng nhập thành công
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Đăng nhập thành công!'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+
+      // TODO: Chuyển đến màn hình chính sau đăng nhập (nếu cần)
+      // Navigator.of(context).pushReplacement(
+      //   MaterialPageRoute(builder: (context) => const HomeScreen()),
+      // );
+
     } on FirebaseAuthException catch (e) {
       String message = 'Đã xảy ra lỗi. Vui lòng thử lại.';
       if (e.code == 'invalid-credential' ||
@@ -46,6 +63,7 @@ class _LoginScreenState extends State<LoginScreen> {
           SnackBar(
             content: Text(message),
             backgroundColor: Theme.of(context).colorScheme.error,
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
@@ -55,6 +73,7 @@ class _LoginScreenState extends State<LoginScreen> {
           SnackBar(
             content: Text('Đã xảy ra lỗi không mong muốn: $e'),
             backgroundColor: Theme.of(context).colorScheme.error,
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
@@ -142,13 +161,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                   color: Colors.white),
                               enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
-                                borderSide:
-                                const BorderSide(color: Colors.white54, width: 2),
+                                borderSide: const BorderSide(
+                                    color: Colors.white54, width: 2),
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
-                                borderSide:
-                                const BorderSide(color: Colors.white, width: 2),
+                                borderSide: const BorderSide(
+                                    color: Colors.white, width: 2),
                               ),
                               filled: true,
                               fillColor: Colors.white.withOpacity(0.1),
@@ -176,13 +195,13 @@ class _LoginScreenState extends State<LoginScreen> {
                                   color: Colors.white),
                               enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
-                                borderSide:
-                                const BorderSide(color: Colors.white54, width: 2),
+                                borderSide: const BorderSide(
+                                    color: Colors.white54, width: 2),
                               ),
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
-                                borderSide:
-                                const BorderSide(color: Colors.white, width: 2),
+                                borderSide: const BorderSide(
+                                    color: Colors.white, width: 2),
                               ),
                               filled: true,
                               fillColor: Colors.white.withOpacity(0.1),
@@ -203,7 +222,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             child: ElevatedButton(
                               onPressed: _isLoading ? null : _login,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.white.withOpacity(0.9),
+                                backgroundColor:
+                                Colors.white.withOpacity(0.9),
                                 foregroundColor: Colors.blueAccent,
                                 textStyle: const TextStyle(
                                     fontSize: 18, fontWeight: FontWeight.bold),
@@ -220,7 +240,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           const SizedBox(height: 12),
 
-                          // 🔗 NÚT ĐI TỚI ĐĂNG KÝ (gạch chân trắng)
+                          // 🔗 NÚT ĐI TỚI ĐĂNG KÝ
                           TextButton(
                             onPressed: _navigateToSignUp,
                             child: Text.rich(

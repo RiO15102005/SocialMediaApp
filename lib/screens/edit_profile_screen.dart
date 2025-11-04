@@ -1,8 +1,9 @@
-// lib/screens/edit_profile_screen.dart
-
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -17,8 +18,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _bioController = TextEditingController();
 
-  bool _loading = true;
   String email = '';
+  String? avatarUrl;
+  bool _loading = true;
 
   @override
   void initState() {
@@ -33,14 +35,48 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         .doc(currentUser!.uid)
         .get();
     final data = doc.data();
+
     if (data != null) {
       _nameController.text = data['displayName'] ?? '';
       _bioController.text = data['bio'] ?? '';
       email = data['email'] ?? '';
+      avatarUrl = data['photoURL'];
     }
-    setState(() {
-      _loading = false;
-    });
+
+    setState(() => _loading = false);
+  }
+
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile == null) return;
+
+    try {
+      final ref = FirebaseStorage.instance
+          .ref()
+          .child('avatars/${currentUser!.uid}.jpg');
+
+      await ref.putFile(File(pickedFile.path));
+      final url = await ref.getDownloadURL();
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(currentUser!.uid)
+          .update({'photoURL': url});
+
+      setState(() => avatarUrl = url);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cập nhật avatar thành công!')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Lỗi cập nhật avatar: $e')),
+      );
+    }
   }
 
   Future<void> _saveChanges() async {
@@ -70,22 +106,44 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Chỉnh sửa hồ sơ'),
-      ),
+      appBar: AppBar(title: const Text('Chỉnh sửa hồ sơ')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // Avatar nổi bật
-            CircleAvatar(
-              radius: 50,
-              backgroundColor: Colors.blueAccent,
-              child: const Icon(Icons.person, size: 50, color: Colors.white),
+            Stack(
+              alignment: Alignment.bottomRight,
+              children: [
+                CircleAvatar(
+                  radius: 50,
+                  backgroundColor: Colors.grey, // màu nền nếu chưa có avatar
+                  backgroundImage: (avatarUrl != null && avatarUrl!.isNotEmpty)
+                      ? NetworkImage(avatarUrl!)
+                      : null,
+                  child: (avatarUrl == null || avatarUrl!.isEmpty)
+                      ? const Icon(Icons.person, size: 50, color: Colors.white)
+                      : null,
+                ),
+                Positioned(
+                  bottom: 0,
+                  right: 4,
+                  child: GestureDetector(
+                    onTap: _pickImage,
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.blue,
+                        shape: BoxShape.circle,
+                      ),
+                      child:
+                      const Icon(Icons.camera_alt, color: Colors.white, size: 18),
+                    ),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 24),
 
-            // Tên hiển thị
             TextField(
               controller: _nameController,
               decoration: const InputDecoration(
@@ -95,7 +153,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Tiểu sử
             TextField(
               controller: _bioController,
               maxLines: 3,
@@ -106,7 +163,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
             const SizedBox(height: 16),
 
-            // Email (read-only)
             TextField(
               controller: TextEditingController(text: email),
               readOnly: true,
@@ -117,7 +173,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
             const SizedBox(height: 24),
 
-            // Nút Lưu
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
