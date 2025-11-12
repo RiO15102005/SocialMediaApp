@@ -1,15 +1,17 @@
-// lib/widgets/post_card.dart
-
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../models/post_model.dart';
+import '../services/post_service.dart';
+import '../screens/comment_screen.dart';
 
 class PostCard extends StatefulWidget {
-  final QueryDocumentSnapshot post;
+  final Post post;
+  final bool showActions;
 
   const PostCard({
     super.key,
     required this.post,
+    this.showActions = false,
   });
 
   @override
@@ -17,36 +19,60 @@ class PostCard extends StatefulWidget {
 }
 
 class _PostCardState extends State<PostCard> {
-  final currentUser = FirebaseAuth.instance.currentUser!;
+  final PostService _postService = PostService();
+  final User? currentUser = FirebaseAuth.instance.currentUser;
 
   Future<void> _toggleLike() async {
-    final List likes = widget.post['likes'];
-    final bool isLiked = likes.contains(currentUser.uid);
-
-    try {
-      DocumentReference postRef = FirebaseFirestore.instance.collection('posts').doc(widget.post.id);
-
-      if (isLiked) {
-        await postRef.update({
-          'likes': FieldValue.arrayRemove([currentUser.uid])
-        });
-      } else {
-        await postRef.update({
-          'likes': FieldValue.arrayUnion([currentUser.uid])
-        });
-      }
-    } catch (e) {
+    if (currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Đã xảy ra lỗi: $e')),
+        const SnackBar(content: Text('Vui lòng đăng nhập để thích bài viết.')),
       );
+      return;
     }
+    try {
+      await _postService.toggleLike(widget.post.postId, widget.post.likes);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Đã xảy ra lỗi: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
+  void _openCommentsWithAnimation() {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            CommentScreen(post: widget.post),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          final slideTween = Tween<Offset>(
+            begin: const Offset(0, 1),
+            end: Offset.zero,
+          ).chain(CurveTween(curve: Curves.easeOutCubic));
+          final fadeTween = Tween<double>(begin: 0.0, end: 1.0)
+              .chain(CurveTween(curve: Curves.easeOut));
+          return SlideTransition(
+            position: animation.drive(slideTween),
+            child: FadeTransition(
+              opacity: animation.drive(fadeTween),
+              child: child,
+            ),
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 280),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final postData = widget.post.data() as Map<String, dynamic>;
-    final List likes = postData['likes'] ?? [];
-    final bool isLiked = likes.contains(currentUser.uid);
+    if (currentUser == null) return const SizedBox.shrink();
+
+    final bool isLiked =
+        currentUser != null && widget.post.likes.contains(currentUser!.uid);
+    final String postTime =
+    widget.post.timestamp.toDate().toString().substring(0, 16);
 
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 10.0),
@@ -55,6 +81,7 @@ class _PostCardState extends State<PostCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Thông tin người đăng
             Row(
               children: [
                 const CircleAvatar(child: Icon(Icons.person)),
@@ -63,68 +90,87 @@ class _PostCardState extends State<PostCard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      postData['userName'] ?? 'Vô danh', // Sửa từ authorEmail thành userName
+                      widget.post.userName,
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     Text(
-                      (postData['timestamp'] as Timestamp).toDate().toString().substring(0, 16),
+                      postTime,
                       style: TextStyle(color: Colors.grey[600], fontSize: 12),
                     ),
                   ],
                 ),
+                const Spacer(),
+                if (currentUser?.uid == widget.post.userId)
+                  PopupMenuButton<String>(
+                    onSelected: (value) async {
+                      if (value == 'delete') {
+                        await _postService.deletePost(
+                          widget.post.postId,
+                          widget.post.userId,
+                        );
+                      }
+                    },
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Text(
+                          'Xóa bài viết',
+                          style: TextStyle(color: Colors.red),
+                        ),
+                      ),
+                    ],
+                  ),
               ],
             ),
             const SizedBox(height: 12),
 
-            if (postData['content'] != null && postData['content'].isNotEmpty)
+            // Nội dung bài đăng
+            if (widget.post.content.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 8.0),
                 child: Text(
-                  postData['content'],
+                  widget.post.content,
                   style: const TextStyle(fontSize: 16.0),
                 ),
               ),
 
-            if (postData['imageUrl'] != null && postData['imageUrl'].isNotEmpty)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10.0),
-                child: Image.network(
-                  postData['imageUrl'],
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  loadingBuilder: (context, child, loadingProgress) {
-                    if (loadingProgress == null) return child;
-                    return const Center(child: CircularProgressIndicator());
-                  },
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Icon(Icons.error, color: Colors.red, size: 50);
-                  },
-                ),
-              ),
-            const Divider(),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                TextButton.icon(
-                  onPressed: _toggleLike,
-                  icon: Icon(
-                    isLiked ? Icons.thumb_up_alt : Icons.thumb_up_alt_outlined,
-                    color: isLiked ? Theme.of(context).primaryColor : Colors.grey,
-                  ),
-                  label: Text(
-                    'Thích (${likes.length})',
-                    style: TextStyle(
-                      color: isLiked ? Theme.of(context).primaryColor : Colors.grey,
+            // Nút Thích và Bình luận
+            if (widget.showActions) ...[
+              const Divider(),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  TextButton.icon(
+                    onPressed: _toggleLike,
+                    icon: Icon(
+                      isLiked
+                          ? Icons.thumb_up_alt
+                          : Icons.thumb_up_alt_outlined,
+                      color: isLiked
+                          ? Theme.of(context).primaryColor
+                          : Colors.grey,
+                    ),
+                    label: Text(
+                      'Thích (${widget.post.likes.length})',
+                      style: TextStyle(
+                        color: isLiked
+                            ? Theme.of(context).primaryColor
+                            : Colors.grey,
+                      ),
                     ),
                   ),
-                ),
-                TextButton.icon(
-                  onPressed: () { /* TODO: Logic bình luận */ },
-                  icon: const Icon(Icons.comment_outlined, color: Colors.grey),
-                  label: const Text('Bình luận', style: TextStyle(color: Colors.grey)),
-                ),
-              ],
-            )
+                  TextButton.icon(
+                    onPressed: _openCommentsWithAnimation,
+                    icon:
+                    const Icon(Icons.comment_outlined, color: Colors.grey),
+                    label: Text(
+                      'Bình luận (${widget.post.commentsCount})',
+                      style: const TextStyle(color: Colors.grey),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
