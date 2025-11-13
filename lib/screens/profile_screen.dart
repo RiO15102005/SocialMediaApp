@@ -1,8 +1,9 @@
+// lib/screens/profile_screen.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-
+import 'friend_service.dart';
 import 'profile_cover.dart';
 import 'profile_avatar.dart';
 import 'profile_info.dart';
@@ -36,6 +37,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _pickAvatar() async {}
   Future<void> _pickCover() async {}
+
   Future<void> _addPost() async {
     final result = await Navigator.push(
       context,
@@ -80,9 +82,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             : null,
       ),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance.collection('users').doc(_targetUserId).snapshots(),
+        stream: FirebaseFirestore.instance
+            .collection('users')
+            .doc(_targetUserId)
+            .snapshots(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+
           final userData = snapshot.data!.data()!;
           final displayName = userData['displayName'] ?? 'Chưa có tên';
           final bio = userData['bio'] ?? 'Chưa có tiểu sử';
@@ -92,10 +98,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ImageProvider? avatarProvider = _avatarImage != null ? FileImage(_avatarImage!) : null;
           ImageProvider? coverProvider = _coverImage != null ? FileImage(_coverImage!) : null;
 
+          final bool isFriend = friends.contains(currentUser?.uid);
+
           return SingleChildScrollView(
             child: Column(
               children: [
-                // Cover + Avatar
                 ProfileCover(
                   coverImage: coverProvider,
                   isMyProfile: _isMyProfile,
@@ -106,37 +113,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   isMyProfile: _isMyProfile,
                   onPickAvatar: _pickAvatar,
                 ),
-
-                // Info (name, friends, bio)
                 ProfileInfo(
                   displayName: displayName,
                   bio: bio,
                   friendsCount: friendsCount,
                   onFriendsTap: () {
                     Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => FriendsScreen(userId: _targetUserId)));
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => FriendsScreen(userId: _targetUserId),
+                      ),
+                    );
                   },
                 ),
-
                 const SizedBox(height: 20),
 
-                // Nút Thêm bài viết + ActionButton
-                Padding(
+                // Nút hành động
+                _isMyProfile
+                    ? Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Row(
                     children: [
-                      AddPostButton(onAddPost: _addPost),
+                      Expanded(child: AddPostButton(onAddPost: _addPost)),
                       const SizedBox(width: 10),
-                      ActionButton(
-                        isMyProfile: _isMyProfile,
-                        targetUserId: _targetUserId,
-                        userData: userData,
+                      Expanded(
+                        child: ActionButton(
+                          isMyProfile: _isMyProfile,
+                          targetUserId: _targetUserId,
+                          userData: userData,
+                        ),
                       ),
                     ],
                   ),
-                ),
+                )
+                    : FriendButton(targetUserId: _targetUserId),
 
                 const SizedBox(height: 30),
               ],

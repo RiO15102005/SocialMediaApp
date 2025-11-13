@@ -2,9 +2,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:zalo_app/screens/chat_screen.dart'; // Import ChatScreen
+import 'package:zalo_app/screens/profile_screen.dart';
+import 'package:zalo_app/screens/chat_screen.dart';
 
-// Widget mới để hiển thị thông tin của người bạn chat
 class ChatListItem extends StatefulWidget {
   final DocumentSnapshot chatDoc;
 
@@ -25,19 +25,22 @@ class _ChatListItemState extends State<ChatListItem> {
     _getOtherUserInfo();
   }
 
-  // Lấy thông tin của người còn lại trong cuộc trò chuyện
   void _getOtherUserInfo() async {
     final chatData = widget.chatDoc.data() as Map<String, dynamic>;
-    final List<dynamic> participants = chatData['participants'];
+    final participants = chatData['participants'] as List<dynamic>;
 
-    // Tìm ID của người còn lại
-    _otherUserId = participants.firstWhere((id) => id != _currentUser!.uid, orElse: () => null);
+    _otherUserId = participants.firstWhere(
+          (id) => id != _currentUser!.uid,
+      orElse: () => null,
+    );
 
     if (_otherUserId != null) {
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(_otherUserId).get();
+      final userDoc =
+      await FirebaseFirestore.instance.collection('users').doc(_otherUserId).get();
       if (userDoc.exists) {
         setState(() {
-          _otherUserName = userDoc.data()?['displayName'] ?? userDoc.data()?['email'] ?? 'Người dùng';
+          _otherUserName =
+              userDoc.data()?['displayName'] ?? userDoc.data()?['email'] ?? 'Người dùng';
         });
       }
     }
@@ -48,8 +51,32 @@ class _ChatListItemState extends State<ChatListItem> {
     final chatData = widget.chatDoc.data() as Map<String, dynamic>;
 
     return ListTile(
-      leading: const CircleAvatar(child: Icon(Icons.person)),
-      title: Text(_otherUserName),
+      leading: GestureDetector(
+        onTap: () {
+          if (_otherUserId != null) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ProfileScreen(userId: _otherUserId),
+              ),
+            );
+          }
+        },
+        child: const CircleAvatar(child: Icon(Icons.person)),
+      ),
+      title: GestureDetector(
+        onTap: () {
+          if (_otherUserId != null) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ProfileScreen(userId: _otherUserId),
+              ),
+            );
+          }
+        },
+        child: Text(_otherUserName),
+      ),
       subtitle: Text(
         chatData['lastMessage'] ?? '...',
         maxLines: 1,
@@ -57,9 +84,10 @@ class _ChatListItemState extends State<ChatListItem> {
       ),
       onTap: () {
         if (_otherUserId != null) {
-          Navigator.of(context).push(
+          Navigator.push(
+            context,
             MaterialPageRoute(
-              builder: (context) => ChatScreen(
+              builder: (_) => ChatScreen(
                 chatId: widget.chatDoc.id,
                 receiverName: _otherUserName,
               ),
@@ -84,16 +112,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
   @override
   Widget build(BuildContext context) {
     if (_currentUser == null) {
-      // Sửa lỗi: Bỏ const ở đây vì AppBar không phải là hằng số
       return Scaffold(
         appBar: AppBar(title: const Text('Tin nhắn')),
         body: const Center(child: Text('Vui lòng đăng nhập để xem tin nhắn.')),
       );
     }
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Tin nhắn'),
-      ),
+      appBar: AppBar(title: const Text('Tin nhắn')),
       body: StreamBuilder<QuerySnapshot>(
         stream: FirebaseFirestore.instance
             .collection('chats')

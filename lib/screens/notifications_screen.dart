@@ -1,7 +1,7 @@
 // lib/screens/notifications_screen.dart
-
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';import 'package:flutter/material.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -13,31 +13,20 @@ class NotificationsScreen extends StatefulWidget {
 class _NotificationsScreenState extends State<NotificationsScreen> {
   final currentUser = FirebaseAuth.instance.currentUser;
 
-  // --- HÀM MỚI: Chấp nhận lời mời ---
   Future<void> _acceptRequest(String requestId, String senderId) async {
     if (currentUser == null) return;
 
     try {
-      // Cập nhật trạng thái lời mời thành 'accepted'
       await FirebaseFirestore.instance
           .collection('friend_requests')
           .doc(requestId)
           .update({'status': 'accepted'});
 
-      // Thêm bạn bè cho cả hai người dùng
-      // Thêm người gửi vào danh sách bạn bè của người nhận (mình)
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(currentUser!.uid)
-          .update({
+      await FirebaseFirestore.instance.collection('users').doc(currentUser!.uid).update({
         'friends': FieldValue.arrayUnion([senderId])
       });
 
-      // Thêm người nhận (mình) vào danh sách bạn bè của người gửi
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(senderId)
-          .update({
+      await FirebaseFirestore.instance.collection('users').doc(senderId).update({
         'friends': FieldValue.arrayUnion([currentUser!.uid])
       });
 
@@ -53,10 +42,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
-  // --- HÀM MỚI: Từ chối lời mời ---
   Future<void> _declineRequest(String requestId) async {
     try {
-      // Cập nhật trạng thái lời mời thành 'declined'
       await FirebaseFirestore.instance
           .collection('friend_requests')
           .doc(requestId)
@@ -79,26 +66,20 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Thông báo'),
-      ),
+      appBar: AppBar(title: const Text('Thông báo')),
       body: StreamBuilder<QuerySnapshot>(
-        // Lấy tất cả lời mời gửi đến mình và có trạng thái là 'pending'
         stream: FirebaseFirestore.instance
             .collection('friend_requests')
             .where('receiverId', isEqualTo: currentUser!.uid)
             .where('status', isEqualTo: 'pending')
             .snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (snapshot.connectionState == ConnectionState.waiting)
             return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
+          if (snapshot.hasError)
             return Center(child: Text('Lỗi tải dữ liệu: ${snapshot.error}'));
-          }
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+          if (!snapshot.hasData || snapshot.data!.docs.isEmpty)
             return const Center(child: Text('Không có lời mời kết bạn mới.'));
-          }
 
           return ListView(
             children: snapshot.data!.docs.map((doc) {
@@ -112,8 +93,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.check, color: Colors.green),
-                      onPressed: () =>
-                          _acceptRequest(doc.id, requestData['senderId']),
+                      onPressed: () => _acceptRequest(doc.id, requestData['senderId']),
                     ),
                     IconButton(
                       icon: const Icon(Icons.close, color: Colors.red),
