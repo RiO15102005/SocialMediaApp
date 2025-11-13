@@ -1,8 +1,5 @@
-// lib/screens/create_post_screen.dart
-
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../services/post_service.dart';
 
 class CreatePostScreen extends StatefulWidget {
   const CreatePostScreen({super.key});
@@ -13,56 +10,36 @@ class CreatePostScreen extends StatefulWidget {
 
 class _CreatePostScreenState extends State<CreatePostScreen> {
   final _textController = TextEditingController();
+  final PostService _postService = PostService();
   bool _isLoading = false;
 
   Future<void> _createPost() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng đăng nhập để đăng bài')),
-      );
-      return;
-    }
-
-    if (_textController.text.trim().isEmpty) {
+    final text = _textController.text.trim();
+    if (text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Nội dung không được để trống')),
       );
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
     try {
-      // Lấy thông tin người dùng từ collection 'users'
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-      final userData = userDoc.data();
-
-      await FirebaseFirestore.instance.collection('posts').add({
-        'userId': user.uid,
-        'userName': userData?['displayName'] ?? userData?['email'] ?? 'Người dùng ẩn danh',
-        'content': _textController.text.trim(),
-        'timestamp': Timestamp.now(),
-        'likes': [], // Thêm trường likes
-      });
-
+      await _postService.createPost(content: text);
       if (mounted) {
-        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đăng bài thành công!')),
+        );
+        Navigator.of(context).pop(true); // báo về HomeScreen để refresh
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Đăng bài thất bại: $e')),
+          SnackBar(content: Text('Lỗi: ${e.toString()}')),
         );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -71,29 +48,32 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Tạo bài viết'),
+        backgroundColor: Theme.of(context).primaryColor,
+        iconTheme: const IconThemeData(color: Colors.white),
         actions: [
           TextButton(
             onPressed: _isLoading ? null : _createPost,
             child: _isLoading
-                ? const CircularProgressIndicator(color: Colors.white)
-                : const Text('ĐĂNG', style: TextStyle(color: Colors.white)),
+                ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+            )
+                : const Text('ĐĂNG',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            TextField(
-              controller: _textController,
-              autofocus: true,
-              maxLines: 10,
-              decoration: const InputDecoration(
-                hintText: 'Bạn đang nghĩ gì?',
-                border: InputBorder.none,
-              ),
-            ),
-          ],
+        child: TextField(
+          controller: _textController,
+          autofocus: true,
+          maxLines: null,
+          decoration: const InputDecoration(
+            hintText: 'Bạn đang nghĩ gì?',
+            border: InputBorder.none,
+          ),
         ),
       ),
     );
