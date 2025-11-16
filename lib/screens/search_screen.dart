@@ -14,32 +14,17 @@ class SearchScreen extends StatefulWidget {
 
 class _SearchScreenState extends State<SearchScreen> {
   final _searchController = TextEditingController();
-  Stream<QuerySnapshot>? _usersStream;
   String _searchText = "";
+  final String currentUid = FirebaseAuth.instance.currentUser!.uid;
 
   @override
   void initState() {
     super.initState();
     _searchController.addListener(() {
       setState(() {
-        _searchText = _searchController.text;
-        _updateSearchStream();
+        _searchText = _searchController.text.trim().toLowerCase();
       });
     });
-  }
-
-  void _updateSearchStream() {
-    if (_searchText.isNotEmpty) {
-      String lowerCaseSearchText = _searchText.toLowerCase();
-
-      _usersStream = FirebaseFirestore.instance
-          .collection('users')
-          .where('email', isGreaterThanOrEqualTo: lowerCaseSearchText)
-          .where('email', isLessThanOrEqualTo: '$lowerCaseSearchText\uf8ff')
-          .snapshots();
-    } else {
-      _usersStream = null;
-    }
   }
 
   @override
@@ -48,73 +33,233 @@ class _SearchScreenState extends State<SearchScreen> {
     super.dispose();
   }
 
+  // ======================================================
+  // GỢI Ý NGƯỜI DÙNG — CÓ THỂ BAO GỒM BẠN BÈ
+  // ======================================================
+  Widget _buildSuggestionList(List friends) {
+    if (_searchText.isEmpty) return const SizedBox.shrink();
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance.collection("users").snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData) return const SizedBox();
+
+        final allUsers = snap.data!.docs;
+
+        final filtered = allUsers.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final uid = data["uid"];
+
+          if (uid == currentUid) return false;
+
+          final name = (data["displayName"] ?? "").toLowerCase();
+          final email = (data["email"] ?? "").toLowerCase();
+
+          return name.startsWith(_searchText) || email.startsWith(_searchText);
+        }).toList();
+
+        if (filtered.isEmpty) return const SizedBox.shrink();
+
+        // ⭐ Sắp xếp: bạn bè lên trước
+        filtered.sort((a, b) {
+          final da = a.data() as Map<String, dynamic>;
+          final db = b.data() as Map<String, dynamic>;
+          final uidA = da["uid"];
+          final uidB = db["uid"];
+          final isFriendA = friends.contains(uidA);
+          final isFriendB = friends.contains(uidB);
+
+          if (isFriendA && !isFriendB) return -1;
+          if (!isFriendA && isFriendB) return 1;
+          return 0;
+        });
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              color: Colors.grey.shade200,
+              child: const Text(
+                "Gợi ý",
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+
+            ...filtered.map((doc) {
+              final user = doc.data() as Map<String, dynamic>;
+              final uid = user["uid"];
+              final isFriend = friends.contains(uid);
+
+              final displayName = (user["displayName"] == null ||
+                  user["displayName"].toString().trim().isEmpty)
+                  ? "Người dùng"
+                  : user["displayName"];
+
+              final email = user["email"] ?? "";
+
+              return ListTile(
+                leading: const CircleAvatar(child: Icon(Icons.person)),
+                title: Text(displayName),
+                subtitle: Text(email),
+                trailing: Text(
+                  isFriend ? "Bạn bè" : "Người lạ",
+                  style: TextStyle(
+                    color: isFriend ? Colors.green : Colors.grey,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ProfileScreen(userId: uid),
+                    ),
+                  );
+                },
+              );
+            }),
+
+            const SizedBox(height: 12),
+          ],
+        );
+      },
+    );
+  }
+
+  // ======================================================
+  // DANH SÁCH BẠN BÈ — KHÔNG HIỆN TRẠNG THÁI
+  // ======================================================
+  Widget _buildFriendsList() {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection("users")
+          .doc(currentUid)
+          .snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData) return const SizedBox();
+
+        final data = snap.data!.data() as Map<String, dynamic>;
+        final friends = (data["friends"] as List?) ?? [];
+
+        if (friends.isEmpty) {
+          return const Center(child: Text("Bạn chưa có bạn bè."));
+        }
+
+        return ListView.builder(
+          padding: EdgeInsets.zero,
+          itemCount: friends.length,
+          itemBuilder: (context, i) {
+            return FutureBuilder<DocumentSnapshot>(
+              future: FirebaseFirestore.instance
+                  .collection("users")
+                  .doc(friends[i])
+                  .get(),
+              builder: (context, userSnap) {
+                if (!userSnap.hasData) return const SizedBox();
+
+                final friend = userSnap.data!.data() as Map<String, dynamic>;
+                final displayName = (friend["displayName"] == null ||
+                    friend["displayName"].toString().trim().isEmpty)
+                    ? "Người dùng"
+                    : friend["displayName"];
+
+                return ListTile(
+                  leading: const CircleAvatar(child: Icon(Icons.person)),
+                  title: Text(displayName),
+                  subtitle: Text(friend["email"] ?? ""),
+                  trailing: const SizedBox(),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ProfileScreen(userId: friends[i]),
+                      ),
+                    );
+                  },
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ======================================================
+  // UI CHÍNH — CHỐNG OVERFLOW, CUỘN MƯỢT
+  // ======================================================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: true, // ⭐ GIẢI QUYẾT VỤ OVERFLOW
       appBar: AppBar(
-        title: const Text('Tìm kiếm bạn bè'),
+        title: const Text("Tìm kiếm bạn bè"),
+        backgroundColor: const Color(0xFF1877F2),
+        foregroundColor: Colors.white,
       ),
+
       body: Column(
         children: [
+          // ================= INPUT SEARCH =================
           Padding(
-            padding: const EdgeInsets.all(12.0),
+            padding: const EdgeInsets.all(12),
             child: TextField(
               controller: _searchController,
               autofocus: true,
               decoration: InputDecoration(
-                hintText: 'Tìm kiếm theo email...',
+                hintText: "Nhập tên hoặc email...",
                 suffixIcon: _searchText.isNotEmpty
                     ? IconButton(
                   icon: const Icon(Icons.clear),
-                  onPressed: () {
-                    _searchController.clear();
-                  },
+                  onPressed: () => _searchController.clear(),
                 )
                     : const Icon(Icons.search),
                 border: const OutlineInputBorder(),
               ),
             ),
           ),
+
+          // ================= VÙNG DƯỚI CUỘN ĐƯỢC =================
           Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: _usersStream,
-              builder: (context, snapshot) {
-                if (_searchText.isEmpty) {
-                  return const Center(child: Text('Nhập email để tìm kiếm bạn bè.'));
-                }
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Gợi ý khi đang gõ
+                  StreamBuilder<DocumentSnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection("users")
+                        .doc(currentUid)
+                        .snapshots(),
+                    builder: (context, snap) {
+                      if (!snap.hasData) return const SizedBox();
+                      final data = snap.data!.data() as Map<String, dynamic>;
+                      final friends = (data["friends"] as List?) ?? [];
+                      return _buildSuggestionList(friends);
+                    },
+                  ),
 
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return const Center(child: Text('Đã xảy ra lỗi!'));
-                }
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return const Center(child: Text('Không tìm thấy người dùng nào.'));
-                }
+                  // Title "Danh sách bạn bè"
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    color: Colors.grey.shade300,
+                    child: const Text(
+                      "Danh sách bạn bè",
+                      style:
+                      TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ),
 
-                return ListView(
-                  children: snapshot.data!.docs.map((doc) {
-                    final userData = doc.data() as Map<String, dynamic>;
-                    // Don't show the current user in the search results
-                    if (userData['uid'] == FirebaseAuth.instance.currentUser?.uid) {
-                      return const SizedBox.shrink();
-                    }
-                    return ListTile(
-                      leading: const CircleAvatar(child: Icon(Icons.person)),
-                      title: Text(userData['displayName']?.isNotEmpty == true
-                          ? userData['displayName']
-                          : userData['email']),
-                      subtitle: Text(userData['email']),
-                      onTap: () {
-                        Navigator.of(context).push(MaterialPageRoute(
-                          builder: (context) => ProfileScreen(userId: userData['uid']),
-                        ));
-                      },
-                    );
-                  }).toList(),
-                );
-              },
+                  // LIST BẠN BÈ — CUỘN TRONG KHUNG CỐ ĐỊNH
+                  SizedBox(
+                    height: 500,
+                    child: _buildFriendsList(),
+                  ),
+                ],
+              ),
             ),
           ),
         ],

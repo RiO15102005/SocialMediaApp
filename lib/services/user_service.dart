@@ -8,7 +8,7 @@ class UserService {
   final _auth = FirebaseAuth.instance;
   final String _userCollection = 'users';
 
-  // === HÀM TẠO HỒ SƠ CƠ BẢN (FIX LỖI PROFILE TRỐNG) ===
+  // Tạo hồ sơ cơ bản khi user đăng ký
   Future<void> createBasicProfile(User user) async {
     final userRef = _firestore.collection(_userCollection).doc(user.uid);
     final doc = await userRef.get();
@@ -19,47 +19,52 @@ class UserService {
         'email': user.email,
         'displayName': user.displayName ?? user.email?.split('@')[0] ?? 'Người dùng mới',
         'bio': '',
-        'friendsList': [],
-        'postCount': 0,
-        'followerCount': 0,
-        'photoURL': null,
+        'friends': [],      // 👈 SỬA CHÍNH XÁC CHỖ NÀY
+        'photoURL': '',
+        'createdAt': Timestamp.now(),
       });
     }
   }
 
-  // === HÀM LẤY DANH SÁCH BẠN BÈ (Cho Newfeed) ===
+  // Lấy danh sách bạn bè (Newfeed)
   Future<List<String>> getCurrentUserFriendsList() async {
     final user = _auth.currentUser;
     if (user == null) return [];
+
     try {
       final doc = await _firestore.collection(_userCollection).doc(user.uid).get();
-      if (doc.exists && doc.data() != null) {
-        final data = doc.data()!;
-        final friends = List<String>.from(data['friendsList'] ?? []);
-        friends.add(user.uid);
-        return friends.toSet().toList();
+      if (!doc.exists || doc.data() == null) {
+        return [user.uid];
       }
-      return [user.uid];
+
+      final data = doc.data()!;
+      final friends = List<String>.from(data['friends'] ?? []); // 👈 ĐÚNG KEY
+
+      // Newfeed phải hiển thị cả bài của mình
+      friends.add(user.uid);
+
+      return friends.toSet().toList();
     } catch (e) {
-      return [_auth.currentUser!.uid];
+      return [user!.uid];
     }
   }
 
-  // === LOGIC LOAD DATA PROFILE ===
+  // Load dữ liệu profile
   Future<Map<String, dynamic>?> loadUserData(String uid) async {
     if (uid.isEmpty) return null;
     final doc = await _firestore.collection(_userCollection).doc(uid).get();
     return doc.data();
   }
 
-  // === FIX: LƯU THAY ĐỔI PROFILE (Sử dụng SET với merge: true) ===
+  // Lưu thay đổi profile
   Future<void> saveProfileChanges(String uid, String displayName, String bio) async {
     if (uid.isEmpty) return;
+
     try {
       await _firestore.collection(_userCollection).doc(uid).set({
         'displayName': displayName.trim(),
         'bio': bio.trim(),
-      }, SetOptions(merge: true)); // FIX LỖI NOT-FOUND
+      }, SetOptions(merge: true));
 
       final user = _auth.currentUser;
       if (user != null) {

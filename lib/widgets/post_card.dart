@@ -6,12 +6,14 @@ import '../screens/comment_screen.dart';
 
 class PostCard extends StatefulWidget {
   final Post post;
-  final bool showActions;
+  final bool showLikeButton;
+  final bool showCommentButton;
 
   const PostCard({
     super.key,
     required this.post,
-    this.showActions = false,
+    this.showLikeButton = true,
+    this.showCommentButton = true,
   });
 
   @override
@@ -23,156 +25,221 @@ class _PostCardState extends State<PostCard> {
   final User? currentUser = FirebaseAuth.instance.currentUser;
 
   Future<void> _toggleLike() async {
-    if (currentUser == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng đăng nhập để thích bài viết.')),
-      );
-      return;
-    }
+    if (currentUser == null) return;
+
+    final uid = currentUser!.uid;
+    final isLiked = widget.post.likes.contains(uid);
+
+    setState(() {
+      isLiked ? widget.post.likes.remove(uid) : widget.post.likes.add(uid);
+    });
+
     try {
-      await _postService.toggleLike(widget.post.postId, widget.post.likes);
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Đã xảy ra lỗi: ${e.toString()}')),
-        );
-      }
+      await _postService.toggleLike(widget.post.postId);
+    } catch (_) {
+      // rollback nếu Firestore lỗi
+      setState(() {
+        isLiked ? widget.post.likes.add(uid) : widget.post.likes.remove(uid);
+      });
     }
   }
 
-  void _openCommentsWithAnimation() {
-    Navigator.of(context).push(
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) =>
-            CommentScreen(post: widget.post),
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          final slideTween = Tween<Offset>(
-            begin: const Offset(0, 1),
-            end: Offset.zero,
-          ).chain(CurveTween(curve: Curves.easeOutCubic));
-          final fadeTween = Tween<double>(begin: 0.0, end: 1.0)
-              .chain(CurveTween(curve: Curves.easeOut));
-          return SlideTransition(
-            position: animation.drive(slideTween),
-            child: FadeTransition(
-              opacity: animation.drive(fadeTween),
-              child: child,
-            ),
-          );
-        },
-        transitionDuration: const Duration(milliseconds: 280),
-      ),
+  // =====================================
+  // ⭐ MỞ COMMENT
+  // =====================================
+  void _openComments() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => CommentScreen(post: widget.post)),
     );
+  }
+
+  // =====================================
+  // ⭐ XÓA BÀI VIẾT — CÓ XÁC NHẬN
+  // =====================================
+  Future<void> _confirmDeletePost() async {
+    final confirm = await showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text(
+            "Xóa bài viết?",
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: const Text("Bạn có chắc chắn muốn xóa bài viết này không?"),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("Hủy"),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text(
+                "Xóa",
+                style: TextStyle(color: Colors.red),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirm == true) {
+      await _postService.deletePost(widget.post.postId);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (currentUser == null) return const SizedBox.shrink();
-
     final bool isLiked =
         currentUser != null && widget.post.likes.contains(currentUser!.uid);
-    final String postTime =
+
+    final String timeStr =
     widget.post.timestamp.toDate().toString().substring(0, 16);
 
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 10.0),
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Thông tin người đăng
-            Row(
-              children: [
-                const CircleAvatar(child: Icon(Icons.person)),
-                const SizedBox(width: 10),
-                Column(
+    return Container(
+      width: double.infinity,
+      color: Colors.white,
+      padding: const EdgeInsets.only(left: 10, right: 10, top: 10, bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+
+          // ================= HEADER =================
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const CircleAvatar(
+                radius: 24,
+                child: Icon(Icons.person, size: 22),
+              ),
+
+              const SizedBox(width: 10),
+
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       widget.post.userName,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 20,
+                      ),
                     ),
+                    const SizedBox(height: 2),
                     Text(
-                      postTime,
-                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                      timeStr,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey,
+                      ),
                     ),
                   ],
                 ),
-                const Spacer(),
-                if (currentUser?.uid == widget.post.userId)
-                  PopupMenuButton<String>(
-                    onSelected: (value) async {
-                      if (value == 'delete') {
-                        await _postService.deletePost(
-                          widget.post.postId,
-                          widget.post.userId,
-                        );
-                      }
-                    },
-                    itemBuilder: (context) => const [
-                      PopupMenuItem(
-                        value: 'delete',
-                        child: Text(
-                          'Xóa bài viết',
-                          style: TextStyle(color: Colors.red),
-                        ),
+              ),
+
+              // ================= XÓA BÀI =================
+              if (currentUser?.uid == widget.post.userId)
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_horiz, size: 22),
+                  onSelected: (value) async {
+                    if (value == "delete") {
+                      await _confirmDeletePost();
+                    }
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: "delete",
+                      child: Text(
+                        "Xóa bài viết",
+                        style: TextStyle(color: Colors.red),
                       ),
-                    ],
+                    ),
+                  ],
+                ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // ================= CONTENT =================
+          if (widget.post.content.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Text(
+                widget.post.content,
+                style: const TextStyle(
+                  fontSize: 26,
+                  height: 1.4,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
+
+          const SizedBox(height: 14),
+
+          // ================= ACTIONS =================
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Row(
+              children: [
+                // LIKE BUTTON
+                if (widget.showLikeButton)
+                  Expanded(
+                    child: InkWell(
+                      onTap: _toggleLike,
+                      child: Row(
+                        children: [
+                          Icon(
+                            isLiked ? Icons.thumb_up : Icons.thumb_up_outlined,
+                            color:
+                            isLiked ? const Color(0xFF1877F2) : Colors.grey,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            "Thích (${widget.post.likes.length})",
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: isLiked
+                                  ? const Color(0xFF1877F2)
+                                  : Colors.grey,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                // COMMENT BUTTON + COUNT
+                if (widget.showCommentButton)
+                  Expanded(
+                    child: InkWell(
+                      onTap: _openComments,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          const Icon(Icons.chat_bubble_outline,
+                              size: 20, color: Colors.grey),
+                          const SizedBox(width: 6),
+
+                          // ⭐ HIỂN THỊ SỐ BÌNH LUẬN ⭐
+                          Text(
+                            "Bình luận (${widget.post.commentsCount})",
+                            style: const TextStyle(
+                                fontSize: 14, color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
               ],
             ),
-            const SizedBox(height: 12),
+          ),
 
-            // Nội dung bài đăng
-            if (widget.post.content.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
-                child: Text(
-                  widget.post.content,
-                  style: const TextStyle(fontSize: 16.0),
-                ),
-              ),
-
-            // Nút Thích và Bình luận
-            if (widget.showActions) ...[
-              const Divider(),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  TextButton.icon(
-                    onPressed: _toggleLike,
-                    icon: Icon(
-                      isLiked
-                          ? Icons.thumb_up_alt
-                          : Icons.thumb_up_alt_outlined,
-                      color: isLiked
-                          ? Theme.of(context).primaryColor
-                          : Colors.grey,
-                    ),
-                    label: Text(
-                      'Thích (${widget.post.likes.length})',
-                      style: TextStyle(
-                        color: isLiked
-                            ? Theme.of(context).primaryColor
-                            : Colors.grey,
-                      ),
-                    ),
-                  ),
-                  TextButton.icon(
-                    onPressed: _openCommentsWithAnimation,
-                    icon:
-                    const Icon(Icons.comment_outlined, color: Colors.grey),
-                    label: Text(
-                      'Bình luận (${widget.post.commentsCount})',
-                      style: const TextStyle(color: Colors.grey),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ],
-        ),
+          const SizedBox(height: 10),
+        ],
       ),
     );
   }

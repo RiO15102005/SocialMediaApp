@@ -9,13 +9,13 @@ class CreatePostScreen extends StatefulWidget {
 }
 
 class _CreatePostScreenState extends State<CreatePostScreen> {
-  final _textController = TextEditingController();
+  final TextEditingController _textController = TextEditingController();
   final PostService _postService = PostService();
   bool _isLoading = false;
 
   Future<void> _createPost() async {
-    final text = _textController.text.trim();
-    if (text.isEmpty) {
+    final content = _textController.text.trim();
+    if (content.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Nội dung không được để trống')),
       );
@@ -25,31 +25,46 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await _postService.createPost(content: text);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Đăng bài thành công!')),
-        );
-        Navigator.of(context).pop(true); // báo về HomeScreen để refresh
-      }
+      await _postService.createPost(content: content);
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đăng bài thành công!')),
+      );
+
+      Navigator.of(context).pop(true);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi: ${e.toString()}')),
-        );
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Đã xảy ra lỗi: ${e.toString()}')),
+      );
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
+  void dispose() {
+    _textController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Tạo bài viết'),
-        backgroundColor: Theme.of(context).primaryColor,
-        iconTheme: const IconThemeData(color: Colors.white),
+        backgroundColor: const Color(0xFF1877F2), // ⭐ MÀU HEADER
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.white), // ⭐ ICON TRẮNG
+
+        title: const Text(
+          'Tạo bài viết',
+          style: TextStyle(
+            color: Colors.white,           // ⭐ CHỮ TRẮNG
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+
         actions: [
           TextButton(
             onPressed: _isLoading ? null : _createPost,
@@ -57,13 +72,22 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 ? const SizedBox(
               width: 18,
               height: 18,
-              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+              child: CircularProgressIndicator(
+                color: Colors.white,
+                strokeWidth: 2,
+              ),
             )
-                : const Text('ĐĂNG',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                : const Text(
+              'ĐĂNG',
+              style: TextStyle(
+                color: Colors.white,  // ⭐ CHỮ ĐĂNG TRẮNG
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
+
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: TextField(

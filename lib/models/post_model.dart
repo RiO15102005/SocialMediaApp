@@ -29,10 +29,10 @@ class Post {
     return Post(
       postId: doc.id,
       userId: data['UID'] ?? '',
-      userName: data['userName'] ,
-      content: data['Cont'] ?? '',
-      likes: List<String>.from(data['Like'] ?? []),
-      shares: data['Share'] ?? 0,
+      userName: data['userName'] ?? 'Ẩn danh',
+      content: data['content'] ?? '',
+      likes: List<String>.from(data['likes'] ?? []),
+      shares: data['shares'] ?? 0,
       timestamp: data['timestamp'] ?? Timestamp.now(),
       commentsCount: data['commentsCount'] ?? 0,
     );

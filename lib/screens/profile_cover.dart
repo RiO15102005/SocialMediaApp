@@ -18,11 +18,13 @@ class ProfileCover extends StatelessWidget {
       alignment: Alignment.center,
       children: [
         Container(
-          height: 200,
+          height: 160, // giảm chiều cao để thu gọn theo chiều dọc
           width: double.infinity,
           decoration: BoxDecoration(
             color: Colors.grey[300],
-            image: coverImage != null ? DecorationImage(image: coverImage!, fit: BoxFit.cover) : null,
+            image: coverImage != null
+                ? DecorationImage(image: coverImage!, fit: BoxFit.cover)
+                : null,
           ),
         ),
         if (isMyProfile)
@@ -34,6 +36,7 @@ class ProfileCover extends StatelessWidget {
               child: IconButton(
                 icon: const Icon(Icons.camera_alt, color: Colors.black),
                 onPressed: onPickCover,
+                tooltip: 'Đổi ảnh bìa',
               ),
             ),
           ),

@@ -5,143 +5,219 @@ class PostService {
   final _firestore = FirebaseFirestore.instance;
   final _auth = FirebaseAuth.instance;
 
-  final String _postCollection = 'POST';
-  final String _userCollection = 'users';
-  final String _commentSubcollection = 'Comm';
+  final String postCol = "POST";
+  final String commentCol = "COMMENTS";
 
-  // === HÀM 1: TẠO POST ===
+  // ============================================================
+  //                   TẠO BÀI VIẾT + GỬI NOTI CHO BẠN BÈ
+  // ============================================================
   Future<void> createPost({required String content}) async {
     final user = _auth.currentUser;
-    if (user == null) throw Exception("Người dùng chưa đăng nhập.");
-    if (content.trim().isEmpty) throw Exception("Nội dung bài đăng không được để trống.");
+    if (user == null || content.trim().isEmpty) return;
 
-    final userDoc = await _firestore.collection(_userCollection).doc(user.uid).get();
-    final userData = userDoc.data();
-    final String userName = userData?['displayName'] ?? user.email?.split('@')[0] ?? 'Ẩn danh';
+    final userDoc =
+    await _firestore.collection('users').doc(user.uid).get();
+    final userName = userDoc.data()?['displayName'] ?? user.email ?? "Ẩn danh";
 
-    await _firestore.collection(_postCollection).add({
-      'UID': user.uid,
-      'userName': userName,
-      'Cont': content.trim(),
-      'Like': [],
-      'Share': 0,
-      'timestamp': Timestamp.now(),
-      'commentsCount': 0,
-    });
-  }
+    final friends = List<String>.from(userDoc.data()?['friends'] ?? []);
 
-  // === HÀM 2: LẤY POST ===
-  Stream<QuerySnapshot> getPostsStream(List<String> uidsToDisplay) {
-    if (uidsToDisplay.isEmpty) {
-      return _firestore.collection(_postCollection).where('UID', isEqualTo: 'invalid_uid_placeholder').snapshots();
-    }
-    if (uidsToDisplay.length > 10) {
-      uidsToDisplay = uidsToDisplay.sublist(0, 10);
-    }
-    return _firestore
-        .collection(_postCollection)
-        .where('UID', whereIn: uidsToDisplay)
-        .orderBy('timestamp', descending: true)
-        .snapshots();
-  }
-
-  // === HÀM 3: LIKE ===
-  Future<void> toggleLike(String postId, List<String> currentLikes) async {
-    final user = _auth.currentUser;
-    if (user == null) throw Exception("Vui lòng đăng nhập để thích bài viết.");
-    final String userId = user.uid;
-    final postRef = _firestore.collection(_postCollection).doc(postId);
-
-    final bool isLiked = currentLikes.contains(userId);
-    if (isLiked) {
-      await postRef.update({'Like': FieldValue.arrayRemove([userId])});
-    } else {
-      await postRef.update({'Like': FieldValue.arrayUnion([userId])});
-    }
-  }
-
-  // === HÀM 4: XÓA POST ===
-  Future<void> deletePost(String postId, String postUserId) async {
-    final user = _auth.currentUser;
-    if (user == null || user.uid != postUserId) {
-      throw Exception("Bạn không có quyền xóa bài viết này.");
-    }
-    await _firestore.collection(_postCollection).doc(postId).delete();
-  }
-
-  // === HÀM 5: GỬI BÌNH LUẬN (có hỗ trợ trả lời) ===
-  Future<void> sendComment(
-      String postId,
-      String commentText,
-      String userName, {
-        String? parentId,
-      }) async {
-    final user = _auth.currentUser;
-    if (user == null || commentText.trim().isEmpty) return;
-
-    final commentsRef = _firestore.collection(_postCollection).doc(postId).collection(_commentSubcollection);
-
-    await commentsRef.add({
-      'UID': user.uid,
-      'userName': userName,
-      'Comm': commentText.trim(),
-      'Date': Timestamp.now(),
-      'parentId': parentId,
-      'replyCount': 0,
+    // Tạo bài viết
+    final newPost = await _firestore.collection(postCol).add({
+      "UID": user.uid,
+      "userName": userName,
+      "content": content.trim(),
+      "likes": [],
+      "commentsCount": 0,
+      "timestamp": Timestamp.now(),
     });
 
-    // Luôn tăng tổng commentsCount của post (bao gồm cả trả lời)
-    await _firestore.collection(_postCollection).doc(postId).update({
-      'commentsCount': FieldValue.increment(1),
-    });
-
-    // Nếu là trả lời thì tăng replyCount của bình luận gốc
-    if (parentId != null && parentId.isNotEmpty) {
-      final parentRef = commentsRef.doc(parentId);
-      await _firestore.runTransaction((tx) async {
-        final snap = await tx.get(parentRef);
-        if (snap.exists) {
-          final current = (snap.data()?['replyCount'] ?? 0) as int;
-          tx.update(parentRef, {'replyCount': current + 1});
-        }
+    // 🔔 Gửi thông báo cho bạn bè
+    for (var f in friends) {
+      await _firestore.collection("notifications").add({
+        "userId": f,               // người nhận
+        "senderId": user.uid,      // người đăng bài
+        "senderName": userName,
+        "postId": newPost.id,
+        "type": "post",
+        "timestamp": Timestamp.now(),
+        "isRead": false
       });
     }
   }
 
-  // === HÀM 6: LẤY STREAM BÌNH LUẬN (cả gốc và trả lời) ===
+  // ============================================================
+  //                          LIKE + NOTIFICATION
+  // ============================================================
+  Future<void> toggleLike(String postId) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final postRef = _firestore.collection(postCol).doc(postId);
+    final snap = await postRef.get();
+
+    List<dynamic> likes = snap.data()?['likes'] ?? [];
+    final postOwner = snap.data()?['UID'];
+
+    final isLiked = likes.contains(user.uid);
+
+    if (isLiked) {
+      await postRef.update({
+        "likes": FieldValue.arrayRemove([user.uid])
+      });
+    } else {
+      await postRef.update({
+        "likes": FieldValue.arrayUnion([user.uid])
+      });
+
+      // 🔔 Gửi thông báo like
+      if (user.uid != postOwner) {
+        final udoc = await _firestore.collection('users').doc(user.uid).get();
+        final name = udoc.data()?['displayName'] ?? "Người dùng";
+
+        await _firestore.collection('notifications').add({
+          "userId": postOwner,
+          "senderId": user.uid,
+          "senderName": name,
+          "postId": postId,
+          "type": "like",
+          "timestamp": Timestamp.now(),
+          "isRead": false
+        });
+      }
+    }
+  }
+
+  // ============================================================
+  //                     XÓA BÀI VIẾT
+  // ============================================================
+  Future<void> deletePost(String postId) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final postRef = _firestore.collection(postCol).doc(postId);
+    final doc = await postRef.get();
+    if (!doc.exists || doc['UID'] != user.uid) return;
+
+    // Xoá comments
+    final comments = await postRef.collection(commentCol).get();
+    for (final c in comments.docs) {
+      await c.reference.delete();
+    }
+
+    await postRef.delete();
+  }
+
+  // ============================================================
+  //                     STREAM COMMENT
+  // ============================================================
   Stream<QuerySnapshot> getCommentsStream(String postId) {
     return _firestore
-        .collection(_postCollection)
+        .collection(postCol)
         .doc(postId)
-        .collection(_commentSubcollection)
-        .orderBy('Date', descending: true)
+        .collection(commentCol)
+        .orderBy("timestamp", descending: true)
         .snapshots();
   }
 
-  // === HÀM 7: XÓA BÌNH LUẬN ===
-  Future<void> deleteComment(String postId, String commentId) async {
+  // ============================================================
+  //               GỬI COMMENT + NOTIFICATION
+  // ============================================================
+  Future<void> sendComment(
+      String postId,
+      String text,
+      String userName, {
+        String? parentId,
+      }) async {
     final user = _auth.currentUser;
-    if (user == null) throw Exception("Bạn chưa đăng nhập.");
+    if (user == null || text.trim().isEmpty) return;
 
-    final commentRef = _firestore
-        .collection(_postCollection)
-        .doc(postId)
-        .collection(_commentSubcollection)
-        .doc(commentId);
+    final postRef = _firestore.collection(postCol).doc(postId);
+    final postSnap = await postRef.get();
+    final postOwner = postSnap.data()?['UID'];
 
-    final snap = await commentRef.get();
-    if (!snap.exists) throw Exception("Bình luận không tồn tại.");
+    // Tạo comment
+    final newComment = await postRef.collection(commentCol).add({
+      "UID": user.uid,
+      "userName": userName,
+      "content": text.trim(),
+      "timestamp": Timestamp.now(),
+      "parentId": parentId,
+    });
 
-    final data = snap.data();
-    if (data?['UID'] != user.uid) {
-      throw Exception("Bạn không có quyền xóa bình luận này.");
+    await postRef.update({
+      "commentsCount": FieldValue.increment(1)
+    });
+
+    // 🔔 NOTI: Bình luận vào bài viết
+    if (parentId == null && user.uid != postOwner) {
+      await _firestore.collection("notifications").add({
+        "userId": postOwner,
+        "senderId": user.uid,
+        "senderName": userName,
+        "postId": postId,
+        "commentId": newComment.id,
+        "type": "comment",
+        "timestamp": Timestamp.now(),
+        "isRead": false
+      });
     }
 
-    await commentRef.delete();
+    // 🔔 NOTI: Trả lời bình luận
+    if (parentId != null) {
+      final parentSnap = await postRef.collection(commentCol).doc(parentId).get();
+      final parentOwner = parentSnap.data()?['UID'];
 
-    // Giảm tổng số commentsCount của post
-    await _firestore.collection(_postCollection).doc(postId).update({
-      'commentsCount': FieldValue.increment(-1),
-    });
+      if (parentOwner != user.uid) {
+        await _firestore.collection("notifications").add({
+          "userId": parentOwner,
+          "senderId": user.uid,
+          "senderName": userName,
+          "postId": postId,
+          "commentId": parentId,
+          "type": "reply",
+          "timestamp": Timestamp.now(),
+          "isRead": false
+        });
+      }
+    }
+  }
+
+  // ============================================================
+  //              XOÁ COMMENT (CÓ KIỂM TRA QUYỀN)
+  // ============================================================
+  Future<void> deleteComment(String postId, String commentId) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final postRef = _firestore.collection(postCol).doc(postId);
+    final postSnap = await postRef.get();
+    final postOwner = postSnap.data()?['UID'];
+
+    final commentRef = postRef.collection(commentCol).doc(commentId);
+    final commentSnap = await commentRef.get();
+
+    if (!commentSnap.exists) return;
+
+    final commentOwner = commentSnap.data()?['UID'];
+
+    // Quyền xoá:
+    // 1. Chủ bài viết -> xoá tất cả comment
+    // 2. Chủ bình luận -> chỉ xoá comment của mình
+    if (user.uid == postOwner || user.uid == commentOwner) {
+      await commentRef.delete();
+      await postRef.update({
+        "commentsCount": FieldValue.increment(-1)
+      });
+    }
+  }
+
+  // ============================================================
+  //                   STREAM TẤT CẢ BÀI VIẾT
+  // ============================================================
+  Stream<QuerySnapshot> getAllPostsStream() {
+    return _firestore
+        .collection(postCol)
+        .orderBy("timestamp", descending: true)
+        .snapshots();
   }
 }
