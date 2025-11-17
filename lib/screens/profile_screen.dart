@@ -1,3 +1,4 @@
+// lib/screens/profile_screen.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -39,15 +40,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _pickCover() async {}
 
   Future<void> _addPost() async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const CreatePostScreen()),
-    );
-
+    final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => const CreatePostScreen()));
     if (result == true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Bài viết mới đã được đăng!')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bài viết mới đã được đăng!')));
       setState(() {});
     }
   }
@@ -61,9 +56,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     if (currentUser == null) {
-      return const Scaffold(
-        body: Center(child: Text("Vui lòng đăng nhập để xem profile.")),
-      );
+      return const Scaffold(body: Center(child: Text("Vui lòng đăng nhập để xem profile.")));
     }
 
     return Scaffold(
@@ -94,13 +87,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ]
             : null,
       ),
-
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection('users')
-            .doc(_targetUserId)
-            .snapshots(),
-
+        stream: FirebaseFirestore.instance.collection('users').doc(_targetUserId).snapshots(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
 
@@ -109,44 +97,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
           final bio = userData['bio'] ?? 'Chưa có tiểu sử';
           final friends = (userData['friends'] as List?) ?? [];
           final friendsCount = friends.length;
-
           final bool isFriend = friends.contains(currentUser!.uid);
 
-          ImageProvider? avatarProvider =
-          _avatarImage != null ? FileImage(_avatarImage!) : null;
-          ImageProvider? coverProvider =
-          _coverImage != null ? FileImage(_coverImage!) : null;
+          ImageProvider? avatarProvider = _avatarImage != null ? FileImage(_avatarImage!) : null;
+          ImageProvider? coverProvider = _coverImage != null ? FileImage(_coverImage!) : null;
 
           return CustomScrollView(
             slivers: [
               SliverToBoxAdapter(
                 child: Column(
                   children: [
-                    ProfileCover(
-                      coverImage: coverProvider,
-                      isMyProfile: _isMyProfile,
-                      onPickCover: _pickCover,
-                    ),
-                    ProfileAvatar(
-                      avatarImage: avatarProvider,
-                      isMyProfile: _isMyProfile,
-                      onPickAvatar: _pickAvatar,
-                    ),
-                    ProfileInfo(
-                      displayName: displayName,
-                      bio: bio,
-                      friendsCount: friendsCount,
-                      onFriendsTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => FriendsScreen(userId: _targetUserId),
-                          ),
-                        );
-                      },
-                    ),
+                    ProfileCover(coverImage: coverProvider, isMyProfile: _isMyProfile, onPickCover: _pickCover),
+                    ProfileAvatar(avatarImage: avatarProvider, isMyProfile: _isMyProfile, onPickAvatar: _pickAvatar),
+                    ProfileInfo(displayName: displayName, bio: bio, friendsCount: friendsCount, onFriendsTap: () {
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => FriendsScreen(userId: _targetUserId)));
+                    }),
                     const SizedBox(height: 20),
-
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: _isMyProfile
@@ -154,37 +120,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         children: [
                           Expanded(child: AddPostButton(onAddPost: _addPost)),
                           const SizedBox(width: 10),
-                          Expanded(
-                            child: ActionButton(
-                              isMyProfile: _isMyProfile,
-                              targetUserId: _targetUserId,
-                            ),
-                          ),
+                          Expanded(child: ActionButton(isMyProfile: _isMyProfile, targetUserId: _targetUserId)),
                         ],
                       )
-                          : ActionButton(
-                        isMyProfile: _isMyProfile,
-                        targetUserId: _targetUserId,
-                      ),
+                          : ActionButton(isMyProfile: _isMyProfile, targetUserId: _targetUserId),
                     ),
-
                     const SizedBox(height: 20),
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                       color: const Color(0xFFF0F2F5),
-                      child: const Text(
-                        "Bài viết",
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
+                      child: const Text("Bài viết", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     ),
                   ],
                 ),
               ),
-
-              // ===========================
-              //   CHẶN XEM BÀI VIẾT
-              // ===========================
               if (!_isMyProfile && !isFriend)
                 SliverToBoxAdapter(
                   child: Padding(
@@ -192,56 +142,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     child: Text(
                       "Bạn không thể xem bài viết của $displayName khi chưa là bạn bè.",
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey,
-                      ),
+                      style: const TextStyle(fontSize: 16, color: Colors.grey),
                     ),
                   ),
                 )
               else
                 StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance
-                      .collection('POST')
-                      .where('UID', isEqualTo: _targetUserId)
-                      .orderBy('timestamp', descending: true)
-                      .snapshots(),
+                  stream: FirebaseFirestore.instance.collection('POST').where('UID', isEqualTo: _targetUserId).orderBy('timestamp', descending: true).snapshots(),
                   builder: (context, postSnapshot) {
                     if (!postSnapshot.hasData) {
-                      return const SliverToBoxAdapter(
-                        child: Center(child: CircularProgressIndicator()),
-                      );
+                      return const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator()));
                     }
 
                     final docs = postSnapshot.data!.docs;
-
                     if (docs.isEmpty) {
-                      return const SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.all(20),
-                          child: Center(child: Text("Chưa có bài viết nào.")),
-                        ),
-                      );
+                      return const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(20), child: Center(child: Text("Chưa có bài viết nào."))));
                     }
 
                     return SliverList(
                       delegate: SliverChildBuilderDelegate(
                             (context, index) {
                           final post = Post.fromFirestore(docs[index]);
-                          return Column(
-                            children: [
-                              PostCard(
-                                post: post,
-                                showLikeButton: true,
-                                showCommentButton: true,
-                              ),
-                              const Divider(
-                                height: 12,
-                                thickness: 10,
-                                color: Color(0xFFF0F2F5),
-                              ),
-                            ],
-                          );
+                          return Column(children: [
+                            PostCard(post: post, showLikeButton: true, showCommentButton: true),
+                            const Divider(height: 12, thickness: 10, color: Color(0xFFF0F2F5)),
+                          ]);
                         },
                         childCount: docs.length,
                       ),

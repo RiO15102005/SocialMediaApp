@@ -1,4 +1,5 @@
 // lib/screens/home_screen.dart
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -28,19 +29,23 @@ class _HomeScreenState extends State<HomeScreen> {
     _friendsListFuture = _userService.getCurrentUserFriendsList();
   }
 
-  void _refresh() {
+  /// ================================
+  /// REFRESH DATA KHI KÉO XUỐNG
+  /// ================================
+  Future<void> _refresh() async {
     setState(() {
       _friendsListFuture = _userService.getCurrentUserFriendsList();
     });
+
+    // Delay nhỏ cho animation mượt
+    await Future.delayed(const Duration(milliseconds: 400));
   }
 
   @override
   Widget build(BuildContext context) {
     if (currentUser == null) {
       return const Scaffold(
-        body: Center(
-          child: Text("Vui lòng đăng nhập để xem bảng tin."),
-        ),
+        body: Center(child: Text("Vui lòng đăng nhập để xem bảng tin.")),
       );
     }
 
@@ -50,98 +55,94 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: const Color(0xFF1877F2),
         iconTheme: const IconThemeData(color: Colors.white),
         titleTextStyle: const TextStyle(
-          color: Colors.white,
-          fontSize: 20,
-          fontWeight: FontWeight.bold,
-        ),
+            color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
       ),
 
       backgroundColor: const Color(0xFFF0F2F5),
 
-      body: FutureBuilder<List<String>>(
-        future: _friendsListFuture,
-        builder: (context, friendSnap) {
-          if (friendSnap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (!friendSnap.hasData) {
-            return const Center(
-              child: Text("Không thể tải danh sách bạn bè."),
-            );
-          }
+      body: RefreshIndicator(            // ⭐ THÊM REFRESH Ở ĐÂY
+        color: Colors.blue,
+        onRefresh: _refresh,
 
-          final allowedUIDs = friendSnap.data!;
+        child: FutureBuilder<List<String>>(
+          future: _friendsListFuture,
+          builder: (context, friendSnap) {
+            if (friendSnap.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (!friendSnap.hasData) {
+              return const Center(child: Text("Không thể tải danh sách bạn bè."));
+            }
 
-          if (!allowedUIDs.contains(currentUser!.uid)) {
-            allowedUIDs.add(currentUser!.uid);
-          }
+            final allowedUIDs = friendSnap.data!;
 
-          return StreamBuilder<QuerySnapshot>(
-            stream: _postService.getAllPostsStream(),
-            builder: (context, postSnap) {
-              if (!postSnap.hasData) {
-                return const Center(child: CircularProgressIndicator());
-              }
+            if (!allowedUIDs.contains(currentUser!.uid)) {
+              allowedUIDs.add(currentUser!.uid);
+            }
 
-              final docs = postSnap.data!.docs;
+            return StreamBuilder<QuerySnapshot>(
+              stream: _postService.getAllPostsStream(),
+              builder: (context, postSnap) {
+                if (!postSnap.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
 
-              final filtered = docs.where((doc) {
-                final uid = doc["UID"];
-                return allowedUIDs.contains(uid);
-              }).toList();
+                final docs = postSnap.data!.docs;
 
-              if (filtered.isEmpty) {
-                return const Center(child: Text("Chưa có bài viết nào."));
-              }
+                // Lọc chỉ bài đăng của bạn bè
+                final filtered = docs.where((doc) {
+                  final uid = doc["UID"];
+                  return allowedUIDs.contains(uid);
+                }).toList();
 
-              filtered.sort((a, b) {
-                final ta = a["timestamp"] as Timestamp;
-                final tb = b["timestamp"] as Timestamp;
-                return tb.compareTo(ta);
-              });
+                if (filtered.isEmpty) {
+                  return const Center(child: Text("Chưa có bài viết nào."));
+                }
 
-              final lastIndex = filtered.length - 1;
+                // Sắp xếp theo thời gian mới nhất
+                filtered.sort((a, b) {
+                  final ta = a["timestamp"] as Timestamp;
+                  final tb = b["timestamp"] as Timestamp;
+                  return tb.compareTo(ta);
+                });
 
-              return ListView.builder(
-                padding: EdgeInsets.zero,
-                itemCount: filtered.length,
-                itemBuilder: (context, index) {
-                  final post = Post.fromFirestore(filtered[index]);
+                final lastIndex = filtered.length - 1;
 
-                  return Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 0, vertical: 0),
-                        child: PostCard(
+                return ListView.builder(
+                  padding: EdgeInsets.zero,
+                  itemCount: filtered.length,
+                  itemBuilder: (context, index) {
+                    final post = Post.fromFirestore(filtered[index]);
+
+                    return Column(
+                      children: [
+                        PostCard(
                           post: post,
                           showLikeButton: true,
                           showCommentButton: true,
                         ),
-                      ),
 
-                      if (index != lastIndex)
-                        const Divider(
-                          height: 12,
-                          thickness: 10,
-                          color: Color(0xFFF0F2F5),
-                        ),
-                    ],
-                  );
-                },
-              );
-            },
-          );
-        },
+                        if (index != lastIndex)
+                          const Divider(
+                            height: 12,
+                            thickness: 10,
+                            color: Color(0xFFF0F2F5),
+                          ),
+                      ],
+                    );
+                  },
+                );
+              },
+            );
+          },
+        ),
       ),
 
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           final result = await Navigator.push(
             context,
-            MaterialPageRoute(
-              builder: (_) => const CreatePostScreen(),
-            ),
+            MaterialPageRoute(builder: (_) => const CreatePostScreen()),
           );
 
           if (result == true) {
@@ -149,14 +150,8 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         },
         backgroundColor: Colors.blue,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: const Icon(
-          Icons.add,
-          size: 28,
-          color: Colors.white,
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: const Icon(Icons.add, size: 28, color: Colors.white),
       ),
     );
   }
