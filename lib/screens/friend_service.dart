@@ -18,25 +18,61 @@ class _FriendButtonState extends State<FriendButton> {
 
   String get currentUserId => _auth.currentUser!.uid;
 
+  // -------------------------------------------
+  // Gửi lời mời
+  // -------------------------------------------
   Future<void> sendFriendRequest(String targetId) async {
     final reqId = "${currentUserId}_$targetId";
+
     await _firestore.collection("friend_requests").doc(reqId).set({
       "senderId": currentUserId,
       "receiverId": targetId,
       "status": "pending",
       "timestamp": FieldValue.serverTimestamp(),
     });
-    // optional: add notification (you can add same as ActionButton)
+
+    // Gửi thông báo
+    await _firestore.collection("notifications").add({
+      "userId": targetId,
+      "senderId": currentUserId,
+      "senderName": _auth.currentUser!.email ?? "",
+      "type": "friend_request",
+      "accepted": false,
+      "timestamp": FieldValue.serverTimestamp(),
+      "isRead": false,
+    });
   }
 
+  // -------------------------------------------
+  // Hủy lời mời
+  // -------------------------------------------
   Future<void> cancelFriendRequest(String targetId) async {
     final reqId = "${currentUserId}_$targetId";
+
+    // Update trạng thái → cancelled
     await _firestore.collection("friend_requests").doc(reqId).update({
       "status": "cancelled",
       "updatedAt": FieldValue.serverTimestamp(),
     }).catchError((_) {});
+
+    // -------------------------------------------
+    // XÓA THÔNG BÁO CỦA B (REAL-TIME)
+    // -------------------------------------------
+    final q = await _firestore
+        .collection("notifications")
+        .where("userId", isEqualTo: targetId)
+        .where("senderId", isEqualTo: currentUserId)
+        .where("type", isEqualTo: "friend_request")
+        .get();
+
+    for (var d in q.docs) {
+      await d.reference.delete();
+    }
   }
 
+  // -------------------------------------------
+  // Hủy kết bạn
+  // -------------------------------------------
   Future<void> unfriend(String targetId) async {
     await _firestore.collection("users").doc(currentUserId).update({
       "friends": FieldValue.arrayRemove([targetId])
@@ -69,24 +105,21 @@ class _FriendButtonState extends State<FriendButton> {
       stream: _firestore.collection("users").doc(targetId).snapshots(),
       builder: (context, userSnap) {
         if (!userSnap.hasData) return const SizedBox();
+
         final friends = (userSnap.data?.data()?["friends"] as List?) ?? [];
         final isFriend = friends.contains(currentUserId);
 
-        // request doc ids
         final req1 = "${currentUserId}_$targetId";
         final req2 = "${targetId}_$currentUserId";
 
         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-          stream: _firestore.collection("friend_requests").where(FieldPath.documentId, whereIn: [req1, req2]).snapshots(),
+          stream: _firestore
+              .collection("friend_requests")
+              .where(FieldPath.documentId, whereIn: [req1, req2])
+              .snapshots(),
           builder: (context, reqSnap) {
             if (!reqSnap.hasData) {
-              if (isFriend) {
-                return _buildButton("Bạn bè", Icons.person, Colors.grey.shade300!, Colors.black, () async {
-                  final ok = await _confirm("Hủy kết bạn", "Bạn chắc chắn muốn hủy kết bạn?");
-                  if (ok) unfriend(targetId);
-                });
-              }
-              return _buildButton("Thêm bạn bè", Icons.person_add_alt_1, const Color(0xFF1877F2), Colors.white, () => sendFriendRequest(targetId));
+              return _defaultAddButton(targetId);
             }
 
             String? status;
@@ -95,50 +128,106 @@ class _FriendButtonState extends State<FriendButton> {
 
             for (var doc in reqSnap.data!.docs) {
               final d = doc.data();
-              final match = (d["senderId"] == currentUserId && d["receiverId"] == targetId) || (d["senderId"] == targetId && d["receiverId"] == currentUserId);
+
+              final match = (d["senderId"] == currentUserId && d["receiverId"] == targetId) ||
+                  (d["senderId"] == targetId && d["receiverId"] == currentUserId);
+
               if (match) {
-                status = d["status"] as String?;
+                status = d["status"];
                 sentByMe = d["senderId"] == currentUserId;
                 sentToMe = d["receiverId"] == currentUserId;
-                break;
               }
             }
 
+            // -------------------------------------------
+            // ALREADY FRIENDS
+            // -------------------------------------------
             if (isFriend) {
               return Row(
                 children: [
-                  Expanded(child: _buildButton("Bạn bè", Icons.person, Colors.grey.shade300!, Colors.black, () async {
-                    final ok = await _confirm("Hủy kết bạn", "Bạn chắc chắn muốn hủy kết bạn?");
-                    if (ok) unfriend(targetId);
-                  })),
+                  Expanded(
+                    child: _buildButton(
+                      "Bạn bè",
+                      Icons.person,
+                      Colors.grey.shade300!,
+                      Colors.black,
+                          () async {
+                        final ok = await _confirm("Hủy kết bạn", "Bạn chắc chắn muốn hủy?");
+                        if (ok) unfriend(targetId);
+                      },
+                    ),
+                  ),
                   const SizedBox(width: 10),
-                  Expanded(child: _buildButton("Nhắn tin", Icons.message, const Color(0xFF1877F2), Colors.white, () {})),
+                  Expanded(
+                    child: _buildButton(
+                      "Nhắn tin",
+                      Icons.message,
+                      const Color(0xFF1877F2),
+                      Colors.white,
+                          () {},
+                    ),
+                  ),
                 ],
               );
             }
 
+            // -------------------------------------------
+            // PENDING
+            // -------------------------------------------
             if (status == "pending") {
               if (sentToMe) {
-                return _buildButton("Trả lời lời mời", Icons.person_add_alt, Colors.green, Colors.white, () {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Vào Thông báo để xử lý lời mời.")));
-                });
+                return _buildButton(
+                  "Trả lời lời mời",
+                  Icons.person_add_alt,
+                  Colors.green,
+                  Colors.white,
+                      () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Vào thông báo để xử lý.")),
+                    );
+                  },
+                );
               }
+
               if (sentByMe) {
-                return _buildButton("Chờ phản hồi", Icons.hourglass_top, Colors.grey.shade300!, Colors.black, () async {
-                  final ok = await _confirm("Hủy lời mời", "Bạn có muốn hủy lời mời không?");
-                  if (ok) cancelFriendRequest(targetId);
-                });
+                return _buildButton(
+                  "Chờ phản hồi",
+                  Icons.hourglass_top,
+                  Colors.grey.shade300!,
+                  Colors.black,
+                      () async {
+                    final ok = await _confirm("Hủy lời mời", "Bạn có muốn hủy lời mời?");
+                    if (ok) cancelFriendRequest(targetId);
+                  },
+                );
               }
             }
 
-            if (status == "declined" || status == "cancelled") {
-              return _buildButton("Thêm bạn bè", Icons.person_add_alt_1, const Color(0xFF1877F2), Colors.white, () => sendFriendRequest(targetId));
+            // -------------------------------------------
+            // CANCELLED REAL-TIME → SHOW ADD FRIEND
+            // -------------------------------------------
+            if (status == "cancelled") {
+              return _defaultAddButton(targetId);
             }
 
-            return _buildButton("Thêm bạn bè", Icons.person_add_alt_1, const Color(0xFF1877F2), Colors.white, () => sendFriendRequest(targetId));
+            if (status == "declined") {
+              return _defaultAddButton(targetId);
+            }
+
+            return _defaultAddButton(targetId);
           },
         );
       },
+    );
+  }
+
+  Widget _defaultAddButton(String targetId) {
+    return _buildButton(
+      "Thêm bạn bè",
+      Icons.person_add_alt_1,
+      const Color(0xFF1877F2),
+      Colors.white,
+          () => sendFriendRequest(targetId),
     );
   }
 
@@ -148,7 +237,11 @@ class _FriendButtonState extends State<FriendButton> {
       child: ElevatedButton.icon(
         icon: Icon(icon, color: textColor),
         label: Text(label, style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 16)),
-        style: ElevatedButton.styleFrom(backgroundColor: bg, padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: bg,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
         onPressed: onPressed,
       ),
     );

@@ -89,7 +89,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   // =======================================================
-  //  ACCEPT FRIEND REQUEST
+  // KIỂM TRA A HỦY LỜI MỜI CHƯA
+  // =======================================================
+  Future<bool> _isRequestCancelled(String senderId) async {
+    final q = await FirebaseFirestore.instance
+        .collection("friend_requests")
+        .where("senderId", isEqualTo: senderId)
+        .where("receiverId", isEqualTo: currentUser!.uid)
+        .limit(1)
+        .get();
+
+    if (q.docs.isEmpty) return false;
+    return q.docs.first.data()["status"] == "cancelled";
+  }
+
+  // =======================================================
+  // ACCEPT FRIEND REQUEST
   // =======================================================
   Future<void> _acceptFriendRequest(String senderId, String notiId) async {
     // Add friend 2 chiều
@@ -118,7 +133,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       await pending.docs.first.reference.update({"status": "accepted"});
     }
 
-    // Send notification cho người gửi
+    // Gửi thông báo cho người gửi
     final me = await FirebaseFirestore.instance
         .collection("users")
         .doc(currentUser!.uid)
@@ -137,13 +152,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   // =======================================================
-  //  DECLINE FRIEND REQUEST — Không gửi thông báo gì cho sender
+  // DECLINE FRIEND REQUEST — Không gửi thông báo
   // =======================================================
   Future<void> _declineFriendRequest(String senderId, String notiId) async {
-    // Xóa notification khỏi người nhận
     await FirebaseFirestore.instance.collection("notifications").doc(notiId).delete();
 
-    // Update friend_requests → declined
     final pending = await FirebaseFirestore.instance
         .collection("friend_requests")
         .where("senderId", isEqualTo: senderId)
@@ -155,11 +168,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     if (pending.docs.isNotEmpty) {
       await pending.docs.first.reference.update({"status": "declined"});
     }
-
-    // ❌ Không gửi thông báo gì cho người gửi
   }
 
-  // CONFIRM DELETE
   Future<bool> _confirmDelete() async {
     return await showDialog<bool>(
       context: context,
@@ -212,6 +222,20 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 final isRead = data["isRead"] ?? false;
                 final accepted = data["accepted"] ?? false;
 
+                // =====================================================
+                // ⭐ AUTO-DELETE nếu người gửi đã HỦY LỜI MỜI
+                // =====================================================
+                if (data["type"] == "friend_request") {
+                  _isRequestCancelled(data["senderId"]).then((cancelled) async {
+                    if (cancelled) {
+                      await FirebaseFirestore.instance
+                          .collection("notifications")
+                          .doc(notiId)
+                          .delete();
+                    }
+                  });
+                }
+
                 return Container(
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   color: isRead ? Colors.white : const Color(0xFFE8F0FE),
@@ -221,17 +245,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       child: Icon(_iconForType(data["type"]), color: Colors.blue),
                     ),
 
-                    // ============================
-                    //   MESSAGE & TITLE
-                    // ============================
                     title: Text(
                       _messageForType(data),
                       style: TextStyle(fontWeight: isRead ? FontWeight.normal : FontWeight.bold),
                     ),
 
-                    // ============================
-                    //   SUBTITLE + ACTIONS
-                    // ============================
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -239,7 +257,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           Text(_formatTime(data["timestamp"])),
                         const SizedBox(height: 8),
 
-                        // BUTTONS FOR FRIEND REQUEST
+                        // BUTTONS FOR PENDING FRIEND REQUEST
                         if (data["type"] == "friend_request" && !accepted)
                           Row(
                             children: [
@@ -269,10 +287,15 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                         context: context,
                                         builder: (ctx) => AlertDialog(
                                           title: const Text("Từ chối kết bạn"),
-                                          content: const Text("Bạn có chắc muốn từ chối yêu cầu này không?"),
+                                          content: const Text(
+                                              "Bạn có chắc muốn từ chối yêu cầu này không?"),
                                           actions: [
-                                            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Không")),
-                                            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Có")),
+                                            TextButton(
+                                                onPressed: () => Navigator.pop(ctx, false),
+                                                child: const Text("Không")),
+                                            TextButton(
+                                                onPressed: () => Navigator.pop(ctx, true),
+                                                child: const Text("Có")),
                                           ],
                                         ),
                                       ) ??
@@ -291,22 +314,20 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           ),
 
                         if (data["type"] == "friend_request" && accepted)
-                          const Text(
-                            "Đã chấp nhận yêu cầu kết bạn",
-                            style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold),
-                          ),
+                          const Text("Đã chấp nhận yêu cầu kết bạn",
+                              style: TextStyle(color: Colors.green)),
                       ],
                     ),
 
-                    // ============================
-                    // DELETE MENU
-                    // ============================
                     trailing: PopupMenuButton<String>(
                       onSelected: (value) async {
                         if (value == "delete") {
                           final ok = await _confirmDelete();
                           if (ok) {
-                            await FirebaseFirestore.instance.collection("notifications").doc(notiId).delete();
+                            await FirebaseFirestore.instance
+                                .collection("notifications")
+                                .doc(notiId)
+                                .delete();
                           }
                         }
                       },
@@ -327,7 +348,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     onTap: () async {
                       _markAsRead(notiId);
 
-                      // Mở post nếu có postId
                       if (data["postId"] != null) {
                         final post = await _fetchPost(data["postId"]);
                         if (post != null && mounted) {

@@ -29,15 +29,12 @@ class _HomeScreenState extends State<HomeScreen> {
     _friendsListFuture = _userService.getCurrentUserFriendsList();
   }
 
-  /// ================================
-  /// REFRESH DATA KHI KÉO XUỐNG
-  /// ================================
+  /// REFRESH dữ liệu khi kéo xuống
   Future<void> _refresh() async {
     setState(() {
       _friendsListFuture = _userService.getCurrentUserFriendsList();
     });
 
-    // Delay nhỏ cho animation mượt
     await Future.delayed(const Duration(milliseconds: 400));
   }
 
@@ -55,12 +52,15 @@ class _HomeScreenState extends State<HomeScreen> {
         backgroundColor: const Color(0xFF1877F2),
         iconTheme: const IconThemeData(color: Colors.white),
         titleTextStyle: const TextStyle(
-            color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.bold
+        ),
       ),
 
       backgroundColor: const Color(0xFFF0F2F5),
 
-      body: RefreshIndicator(            // ⭐ THÊM REFRESH Ở ĐÂY
+      body: RefreshIndicator(
         color: Colors.blue,
         onRefresh: _refresh,
 
@@ -89,17 +89,30 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 final docs = postSnap.data!.docs;
 
-                // Lọc chỉ bài đăng của bạn bè
                 final filtered = docs.where((doc) {
                   final uid = doc["UID"];
                   return allowedUIDs.contains(uid);
                 }).toList();
 
+                /// ================================
+                /// FIX QUAN TRỌNG
+                /// Nếu không có bài viết → dùng ListView để RefreshIndicator hoạt động
+                /// ================================
                 if (filtered.isEmpty) {
-                  return const Center(child: Text("Chưa có bài viết nào."));
+                  return ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    children: const [
+                      SizedBox(height: 200),
+                      Center(
+                        child: Text(
+                          "Chưa có bài viết nào.",
+                          style: TextStyle(fontSize: 16),
+                        ),
+                      ),
+                    ],
+                  );
                 }
 
-                // Sắp xếp theo thời gian mới nhất
                 filtered.sort((a, b) {
                   final ta = a["timestamp"] as Timestamp;
                   final tb = b["timestamp"] as Timestamp;

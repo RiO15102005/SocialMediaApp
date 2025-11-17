@@ -61,10 +61,26 @@ class _ActionButtonState extends State<ActionButton> {
   // cancel request (sender cancels) -> set status cancelled
   Future<void> cancelRequest(String targetId) async {
     final reqId = "${currentUid}_$targetId";
+
+    // update trạng thái
     await _firestore.collection("friend_requests").doc(reqId).update({
       "status": "cancelled",
       "updatedAt": FieldValue.serverTimestamp(),
     }).catchError((_) {});
+
+    // ------------------------------------------------------
+    // XÓA THÔNG BÁO BÊN B (y như FriendButton)
+    // ------------------------------------------------------
+    final q = await _firestore
+        .collection("notifications")
+        .where("userId", isEqualTo: targetId)
+        .where("senderId", isEqualTo: currentUid)
+        .where("type", isEqualTo: "friend_request")
+        .get();
+
+    for (var d in q.docs) {
+      await d.reference.delete();
+    }
   }
 
   // unfriend (remove both sides)
@@ -84,8 +100,14 @@ class _ActionButtonState extends State<ActionButton> {
         title: Text(title),
         content: Text(msg),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Không")),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Có")),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("Không"),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text("Có"),
+          ),
         ],
       ),
     ) ??
@@ -101,11 +123,18 @@ class _ActionButtonState extends State<ActionButton> {
         width: double.infinity,
         child: ElevatedButton.icon(
           onPressed: () {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => const EditProfileScreen()));
+            Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const EditProfileScreen()));
           },
           icon: const Icon(Icons.edit, color: Colors.black),
-          label: const Text("Chỉnh sửa hồ sơ", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+          label: const Text("Chỉnh sửa hồ sơ",
+              style:
+              TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+          style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10))),
         ),
       );
     }
@@ -130,26 +159,31 @@ class _ActionButtonState extends State<ActionButton> {
               .snapshots(),
           builder: (context, reqSnap) {
             if (!reqSnap.hasData) {
-              // No docs found yet -> default button
               if (isFriend) {
-                // already friend
                 return Row(
                   children: [
                     Expanded(
-                      child: _btn("Bạn bè", Icons.person, Colors.grey.shade300!, Colors.black, () async {
-                        final ok = await _confirm("Hủy kết bạn", "Bạn chắc chắn muốn hủy kết bạn?");
-                        if (ok) unfriend(targetId);
-                      }),
+                      child: _btn("Bạn bè", Icons.person,
+                          Colors.grey.shade300!, Colors.black, () async {
+                            final ok = await _confirm(
+                                "Hủy kết bạn", "Bạn chắc chắn muốn hủy kết bạn?");
+                            if (ok) unfriend(targetId);
+                          }),
                     ),
                     const SizedBox(width: 10),
-                    Expanded(child: _btn("Nhắn tin", Icons.message, const Color(0xFF1877F2), Colors.white, () {})),
+                    Expanded(
+                      child: _btn("Nhắn tin", Icons.message,
+                          const Color(0xFF1877F2), Colors.white, () {}),
+                    ),
                   ],
                 );
               }
-              return _btn("Thêm bạn bè", Icons.person_add_alt_1, const Color(0xFF1877F2), Colors.white, () => sendRequest(targetId));
+              return _btn("Thêm bạn bè", Icons.person_add_alt_1,
+                  const Color(0xFF1877F2), Colors.white,
+                      () => sendRequest(targetId));
             }
 
-            // Determine status from returned docs
+            // Determine status
             String? status;
             bool sentByMe = false;
             bool sentToMe = false;
@@ -166,17 +200,21 @@ class _ActionButtonState extends State<ActionButton> {
             }
 
             if (isFriend) {
-              // already friend
               return Row(
                 children: [
                   Expanded(
-                    child: _btn("Bạn bè", Icons.person, Colors.grey.shade300!, Colors.black, () async {
-                      final ok = await _confirm("Hủy kết bạn", "Bạn chắc chắn muốn hủy kết bạn?");
-                      if (ok) unfriend(targetId);
-                    }),
+                    child: _btn("Bạn bè", Icons.person, Colors.grey.shade300!,
+                        Colors.black, () async {
+                          final ok = await _confirm(
+                              "Hủy kết bạn", "Bạn chắc chắn muốn hủy kết bạn?");
+                          if (ok) unfriend(targetId);
+                        }),
                   ),
                   const SizedBox(width: 10),
-                  Expanded(child: _btn("Nhắn tin", Icons.message, const Color(0xFF1877F2), Colors.white, () {})),
+                  Expanded(
+                    child: _btn("Nhắn tin", Icons.message,
+                        const Color(0xFF1877F2), Colors.white, () {}),
+                  ),
                 ],
               );
             }
@@ -184,31 +222,44 @@ class _ActionButtonState extends State<ActionButton> {
             // pending
             if (status == "pending") {
               if (sentToMe) {
-                // they sent to me -> receiver view
-                return _btn("Trả lời lời mời", Icons.person_add, Colors.orange.shade300!, Colors.black, () {
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Vui lòng vào Thông báo để xử lý lời mời.")));
-                });
+                return _btn(
+                  "Trả lời lời mời",
+                  Icons.person_add,
+                  Colors.orange.shade300!,
+                  Colors.black,
+                      () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content:
+                          Text("Vui lòng vào Thông báo để xử lý lời mời.")),
+                    );
+                  },
+                );
               }
 
               if (sentByMe) {
-                // I sent -> can cancel
-                return _btn("Chờ phản hồi", Icons.hourglass_top, Colors.grey.shade300!, Colors.black, () async {
-                  final ok = await _confirm("Hủy lời mời", "Bạn có muốn hủy lời mời không?");
-                  if (ok) {
-                    await cancelRequest(targetId);
-                    setState(() {});
-                  }
-                });
+                return _btn("Chờ phản hồi", Icons.hourglass_top,
+                    Colors.grey.shade300!, Colors.black, () async {
+                      final ok = await _confirm(
+                          "Hủy lời mời", "Bạn có muốn hủy lời mời không?");
+                      if (ok) {
+                        await cancelRequest(targetId);
+                        setState(() {});
+                      }
+                    });
               }
             }
 
-            // declined or cancelled -> show add friend
+            // declined / cancelled
             if (status == "declined" || status == "cancelled") {
-              return _btn("Thêm bạn bè", Icons.person_add_alt_1, const Color(0xFF1877F2), Colors.white, () => sendRequest(targetId));
+              return _btn("Thêm bạn bè", Icons.person_add_alt_1,
+                  const Color(0xFF1877F2), Colors.white,
+                      () => sendRequest(targetId));
             }
 
-            // default: show add friend
-            return _btn("Thêm bạn bè", Icons.person_add_alt_1, const Color(0xFF1877F2), Colors.white, () => sendRequest(targetId));
+            return _btn("Thêm bạn bè", Icons.person_add_alt_1,
+                const Color(0xFF1877F2), Colors.white,
+                    () => sendRequest(targetId));
           },
         );
       },
@@ -221,8 +272,14 @@ class _ActionButtonState extends State<ActionButton> {
       child: ElevatedButton.icon(
         onPressed: onTap,
         icon: Icon(icon, color: textColor),
-        label: Text(label, style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 16)),
-        style: ElevatedButton.styleFrom(backgroundColor: bg, padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+        label: Text(label,
+            style:
+            TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 16)),
+        style: ElevatedButton.styleFrom(
+            backgroundColor: bg,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10))),
       ),
     );
   }
