@@ -1,4 +1,3 @@
-// lib/screens/profile_screen.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -71,8 +70,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             onSelected: (value) {
               if (value == 'logout') _logout();
             },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
+            itemBuilder: (context) => const [
+              PopupMenuItem(
                 value: 'logout',
                 child: Row(
                   children: [
@@ -148,7 +147,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 )
               else
                 StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance.collection('POST').where('UID', isEqualTo: _targetUserId).orderBy('timestamp', descending: true).snapshots(),
+                  stream: FirebaseFirestore.instance
+                      .collection('POST')
+                      .where('UID', isEqualTo: _targetUserId)
+                      .orderBy('timestamp', descending: true)
+                      .snapshots(),
                   builder: (context, postSnapshot) {
                     if (!postSnapshot.hasData) {
                       return const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator()));
@@ -156,17 +159,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                     final docs = postSnapshot.data!.docs;
                     if (docs.isEmpty) {
-                      return const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(20), child: Center(child: Text("Chưa có bài viết nào."))));
+                      return const SliverToBoxAdapter(
+                        child: Padding(padding: EdgeInsets.all(20), child: Center(child: Text("Chưa có bài viết nào."))),
+                      );
                     }
 
                     return SliverList(
                       delegate: SliverChildBuilderDelegate(
                             (context, index) {
                           final post = Post.fromFirestore(docs[index]);
-                          return Column(children: [
-                            PostCard(post: post, showLikeButton: true, showCommentButton: true),
-                            const Divider(height: 12, thickness: 10, color: Color(0xFFF0F2F5)),
-                          ]);
+                          return Column(
+                            children: [
+                              PostCard(post: post, showLikeButton: true, showCommentButton: true, source: "profile"),
+                              const Divider(height: 12, thickness: 10, color: Color(0xFFF0F2F5)),
+                            ],
+                          );
                         },
                         childCount: docs.length,
                       ),

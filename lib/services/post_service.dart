@@ -8,20 +8,14 @@ class PostService {
   final String postCol = "POST";
   final String commentCol = "COMMENTS";
 
-  // ============================================================
-  //                   TẠO BÀI VIẾT + GỬI NOTI CHO BẠN BÈ
-  // ============================================================
   Future<void> createPost({required String content}) async {
     final user = _auth.currentUser;
     if (user == null || content.trim().isEmpty) return;
 
-    final userDoc =
-    await _firestore.collection('users').doc(user.uid).get();
+    final userDoc = await _firestore.collection('users').doc(user.uid).get();
     final userName = userDoc.data()?['displayName'] ?? user.email ?? "Ẩn danh";
-
     final friends = List<String>.from(userDoc.data()?['friends'] ?? []);
 
-    // Tạo bài viết
     final newPost = await _firestore.collection(postCol).add({
       "UID": user.uid,
       "userName": userName,
@@ -31,11 +25,10 @@ class PostService {
       "timestamp": Timestamp.now(),
     });
 
-    // 🔔 Gửi thông báo cho bạn bè
     for (var f in friends) {
       await _firestore.collection("notifications").add({
-        "userId": f,               // người nhận
-        "senderId": user.uid,      // người đăng bài
+        "userId": f,
+        "senderId": user.uid,
         "senderName": userName,
         "postId": newPost.id,
         "type": "post",
@@ -45,35 +38,27 @@ class PostService {
     }
   }
 
-  // ============================================================
-  //                          LIKE + NOTIFICATION
-  // ============================================================
   Future<void> toggleLike(String postId) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
     final postRef = _firestore.collection(postCol).doc(postId);
     final snap = await postRef.get();
+    final data = snap.data() as Map<String, dynamic>?;
 
-    List<dynamic> likes = snap.data()?['likes'] ?? [];
-    final postOwner = snap.data()?['UID'];
+    if (data == null) return;
 
+    final likes = List<String>.from(data['likes'] ?? []);
+    final postOwner = data['UID'];
     final isLiked = likes.contains(user.uid);
 
     if (isLiked) {
-      await postRef.update({
-        "likes": FieldValue.arrayRemove([user.uid])
-      });
+      await postRef.update({"likes": FieldValue.arrayRemove([user.uid])});
     } else {
-      await postRef.update({
-        "likes": FieldValue.arrayUnion([user.uid])
-      });
-
-      // 🔔 Gửi thông báo like
+      await postRef.update({"likes": FieldValue.arrayUnion([user.uid])});
       if (user.uid != postOwner) {
         final udoc = await _firestore.collection('users').doc(user.uid).get();
         final name = udoc.data()?['displayName'] ?? "Người dùng";
-
         await _firestore.collection('notifications').add({
           "userId": postOwner,
           "senderId": user.uid,
@@ -87,18 +72,16 @@ class PostService {
     }
   }
 
-  // ============================================================
-  //                     XÓA BÀI VIẾT
-  // ============================================================
   Future<void> deletePost(String postId) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
     final postRef = _firestore.collection(postCol).doc(postId);
     final doc = await postRef.get();
-    if (!doc.exists || doc['UID'] != user.uid) return;
+    final data = doc.data() as Map<String, dynamic>?;
 
-    // Xoá comments
+    if (!doc.exists || data == null || data['UID'] != user.uid) return;
+
     final comments = await postRef.collection(commentCol).get();
     for (final c in comments.docs) {
       await c.reference.delete();
@@ -107,9 +90,6 @@ class PostService {
     await postRef.delete();
   }
 
-  // ============================================================
-  //                     STREAM COMMENT
-  // ============================================================
   Stream<QuerySnapshot> getCommentsStream(String postId) {
     return _firestore
         .collection(postCol)
@@ -119,9 +99,6 @@ class PostService {
         .snapshots();
   }
 
-  // ============================================================
-  //               GỬI COMMENT + NOTIFICATION
-  // ============================================================
   Future<void> sendComment(
       String postId,
       String text,
@@ -135,20 +112,17 @@ class PostService {
     final postSnap = await postRef.get();
     final postOwner = postSnap.data()?['UID'];
 
-    // Tạo comment
     final newComment = await postRef.collection(commentCol).add({
       "UID": user.uid,
       "userName": userName,
       "content": text.trim(),
       "timestamp": Timestamp.now(),
       "parentId": parentId,
+      "likes": [],
     });
 
-    await postRef.update({
-      "commentsCount": FieldValue.increment(1)
-    });
+    await postRef.update({"commentsCount": FieldValue.increment(1)});
 
-    // 🔔 NOTI: Bình luận vào bài viết
     if (parentId == null && user.uid != postOwner) {
       await _firestore.collection("notifications").add({
         "userId": postOwner,
@@ -162,11 +136,9 @@ class PostService {
       });
     }
 
-    // 🔔 NOTI: Trả lời bình luận
     if (parentId != null) {
       final parentSnap = await postRef.collection(commentCol).doc(parentId).get();
       final parentOwner = parentSnap.data()?['UID'];
-
       if (parentOwner != user.uid) {
         await _firestore.collection("notifications").add({
           "userId": parentOwner,
@@ -182,9 +154,6 @@ class PostService {
     }
   }
 
-  // ============================================================
-  //              XOÁ COMMENT (CÓ KIỂM TRA QUYỀN)
-  // ============================================================
   Future<void> deleteComment(String postId, String commentId) async {
     final user = _auth.currentUser;
     if (user == null) return;
@@ -200,20 +169,37 @@ class PostService {
 
     final commentOwner = commentSnap.data()?['UID'];
 
-    // Quyền xoá:
-    // 1. Chủ bài viết -> xoá tất cả comment
-    // 2. Chủ bình luận -> chỉ xoá comment của mình
     if (user.uid == postOwner || user.uid == commentOwner) {
       await commentRef.delete();
-      await postRef.update({
-        "commentsCount": FieldValue.increment(-1)
-      });
+      await postRef.update({"commentsCount": FieldValue.increment(-1)});
     }
   }
 
-  // ============================================================
-  //                   STREAM TẤT CẢ BÀI VIẾT
-  // ============================================================
+  Future<void> toggleCommentLike(String postId, String commentId) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final commentRef = _firestore
+        .collection(postCol)
+        .doc(postId)
+        .collection(commentCol)
+        .doc(commentId);
+
+    final snap = await commentRef.get();
+    final data = snap.data() as Map<String, dynamic>?;
+
+    if (data == null) return;
+
+    final likes = List<String>.from(data['likes'] ?? []);
+    final isLiked = likes.contains(user.uid);
+
+    if (isLiked) {
+      await commentRef.update({"likes": FieldValue.arrayRemove([user.uid])});
+    } else {
+      await commentRef.update({"likes": FieldValue.arrayUnion([user.uid])});
+    }
+  }
+
   Stream<QuerySnapshot> getAllPostsStream() {
     return _firestore
         .collection(postCol)

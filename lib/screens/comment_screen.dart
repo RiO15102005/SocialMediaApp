@@ -10,8 +10,9 @@ import '../widgets/post_card.dart';
 
 class CommentScreen extends StatefulWidget {
   final Post post;
+  final String source; // "home" hoặc "profile"
 
-  const CommentScreen({super.key, required this.post});
+  const CommentScreen({super.key, required this.post, this.source = "home"});
 
   @override
   State<CommentScreen> createState() => _CommentScreenState();
@@ -23,7 +24,7 @@ class _CommentScreenState extends State<CommentScreen> {
 
   final PostService _postService = PostService();
   final UserService _userService = UserService();
-  final currentUser = FirebaseAuth.instance.currentUser;
+  final User? currentUser = FirebaseAuth.instance.currentUser;
 
   bool _isLoadingName = true;
   String _currentUserName = "Bạn";
@@ -44,13 +45,11 @@ class _CommentScreenState extends State<CommentScreen> {
     final data = await _userService.loadUserData(currentUser!.uid);
 
     setState(() {
-      _currentUserName =
-          data?["displayName"] ?? currentUser!.email!.split("@")[0];
+      _currentUserName = data?["displayName"] ?? currentUser!.email!.split("@")[0];
       _isLoadingName = false;
     });
   }
 
-  // ================= GỬI BÌNH LUẬN NHANH =================
   Future<void> _sendComment() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
@@ -65,7 +64,7 @@ class _CommentScreenState extends State<CommentScreen> {
       _replyingName = null;
     });
 
-    _postService.sendComment(
+    await _postService.sendComment(
       widget.post.postId,
       text,
       _currentUserName,
@@ -73,7 +72,6 @@ class _CommentScreenState extends State<CommentScreen> {
     );
   }
 
-  // ================= KHI NHẤN TRẢ LỜI =================
   void _replyTo(String id, String name) {
     setState(() {
       _replyingId = id;
@@ -97,7 +95,11 @@ class _CommentScreenState extends State<CommentScreen> {
   }
 
   Future<void> _delete(String id) async {
-    _postService.deleteComment(widget.post.postId, id);
+    await _postService.deleteComment(widget.post.postId, id);
+  }
+
+  Future<void> _likeComment(String commentId) async {
+    await _postService.toggleCommentLike(widget.post.postId, commentId);
   }
 
   @override
@@ -105,41 +107,29 @@ class _CommentScreenState extends State<CommentScreen> {
     final String postOwner = widget.post.userId;
 
     return Scaffold(
-      // ==========================
-      //       APPBAR CHỈNH SỬA
-      // ==========================
       appBar: AppBar(
         backgroundColor: const Color(0xFF1877F2),
         elevation: 0,
-        iconTheme: const IconThemeData(
-          color: Colors.white,      // nút back màu trắng
-        ),
-        title: const Text(
-          "Bình luận",
-          style: TextStyle(
-            color: Colors.white,     // chữ tiêu đề màu trắng
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: const Text("Bình luận", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
-
       body: Column(
         children: [
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: _postService.getCommentsStream(widget.post.postId),
               builder: (context, snap) {
-                if (!snap.hasData) {
+                if (snap.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
+                }
+                if (!snap.hasData) {
+                  return const Center(child: Text("Không có dữ liệu bình luận."));
                 }
 
                 final allDocs = snap.data!.docs;
-                final allComments =
-                allDocs.map((e) => Comment.fromFirestore(e)).toList();
+                final allComments = allDocs.map((e) => Comment.fromFirestore(e)).toList();
 
-                final parents = allComments
-                    .where((c) => c.parentId == null)
-                    .toList()
+                final parents = allComments.where((c) => c.parentId == null).toList()
                   ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
                 final repliesMap = <String, List<Comment>>{};
@@ -149,7 +139,6 @@ class _CommentScreenState extends State<CommentScreen> {
 
                 return CustomScrollView(
                   slivers: [
-                    // ====== POST Ở TRÊN ======
                     SliverToBoxAdapter(
                       child: Column(
                         children: [
@@ -158,20 +147,15 @@ class _CommentScreenState extends State<CommentScreen> {
                             padding: const EdgeInsets.all(8),
                             child: PostCard(
                               post: widget.post,
-                              showCommentButton: false,
+                              showCommentButton: true, // hiển thị cả like và bình luận
                               showLikeButton: true,
+                              source: widget.source,
                             ),
                           ),
-                          Container(
-                            height: 8,
-                            width: double.infinity,
-                            color: const Color(0xFFF0F2F5),
-                          )
+                          Container(height: 8, width: double.infinity, color: const Color(0xFFF0F2F5)),
                         ],
                       ),
                     ),
-
-                    // ====== COMMENT CHA ======
                     SliverList(
                       delegate: SliverChildBuilderDelegate(
                             (context, i) {
@@ -180,8 +164,8 @@ class _CommentScreenState extends State<CommentScreen> {
                           final expanded = _expanded.contains(parent.commentId);
 
                           final bool canDeleteParent =
-                              (currentUser!.uid == postOwner) ||
-                                  (currentUser!.uid == parent.userId);
+                              (currentUser != null) &&
+                                  (currentUser!.uid == postOwner || currentUser!.uid == parent.userId);
 
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -194,13 +178,13 @@ class _CommentScreenState extends State<CommentScreen> {
                                 onReply: _replyTo,
                                 onToggleReplies: _toggle,
                                 onDelete: _delete,
+                                onLike: _likeComment,
                               ),
-
                               if (expanded)
                                 ...replies.map((r) {
                                   final bool canDeleteReply =
-                                      (currentUser!.uid == postOwner) ||
-                                          (currentUser!.uid == r.userId);
+                                      (currentUser != null) &&
+                                          (currentUser!.uid == postOwner || currentUser!.uid == r.userId);
 
                                   return Padding(
                                     padding: const EdgeInsets.only(left: 32),
@@ -211,6 +195,7 @@ class _CommentScreenState extends State<CommentScreen> {
                                       canDelete: canDeleteReply,
                                       onReply: _replyTo,
                                       onDelete: _delete,
+                                      onLike: _likeComment,
                                     ),
                                   );
                                 }),
@@ -225,14 +210,12 @@ class _CommentScreenState extends State<CommentScreen> {
               },
             ),
           ),
-
           if (!_isLoadingName) _inputBox(),
         ],
       ),
     );
   }
 
-  // ================= Ô NHẬP COMMENT =================
   Widget _inputBox() {
     return SafeArea(
       child: Container(
@@ -248,13 +231,7 @@ class _CommentScreenState extends State<CommentScreen> {
               Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      "Trả lời $_replyingName",
-                      style: const TextStyle(
-                        color: Colors.grey,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
+                    child: Text("Trả lời $_replyingName", style: const TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)),
                   ),
                   IconButton(
                     onPressed: () {
@@ -267,25 +244,18 @@ class _CommentScreenState extends State<CommentScreen> {
                   )
                 ],
               ),
-
             Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: _controller,
                     focusNode: _focusNode,
-                    decoration: const InputDecoration(
-                      hintText: "Viết bình luận...",
-                      border: InputBorder.none,
-                    ),
+                    decoration: const InputDecoration(hintText: "Viết bình luận...", border: InputBorder.none),
                     minLines: 1,
                     maxLines: 5,
                   ),
                 ),
-                IconButton(
-                  onPressed: _sendComment,
-                  icon: const Icon(Icons.send, color: Colors.blue),
-                )
+                IconButton(onPressed: _sendComment, icon: const Icon(Icons.send, color: Colors.blue)),
               ],
             ),
           ],

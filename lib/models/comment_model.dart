@@ -1,4 +1,3 @@
-// lib/models/comment_model.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Comment {
@@ -8,6 +7,7 @@ class Comment {
   final String content;
   final Timestamp timestamp;
   final String? parentId;
+  final List<String> likes;
 
   Comment({
     required this.commentId,
@@ -16,6 +16,7 @@ class Comment {
     required this.content,
     required this.timestamp,
     this.parentId,
+    required this.likes,
   });
 
   factory Comment.fromFirestore(DocumentSnapshot doc) {
@@ -26,7 +27,10 @@ class Comment {
       userName: data['userName'] ?? 'Ẩn danh',
       content: data['content'] ?? '',
       timestamp: data['timestamp'] ?? Timestamp.now(),
-      parentId: data['parentId'], // reply parent id
+      parentId: data['parentId'],
+      likes: List<String>.from(data['likes'] ?? []),
     );
   }
+
+  int get likesCount => likes.length;
 }

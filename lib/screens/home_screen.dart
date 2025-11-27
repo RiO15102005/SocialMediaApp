@@ -1,5 +1,3 @@
-// lib/screens/home_screen.dart
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -29,12 +27,10 @@ class _HomeScreenState extends State<HomeScreen> {
     _friendsListFuture = _userService.getCurrentUserFriendsList();
   }
 
-  /// REFRESH dữ liệu khi kéo xuống
   Future<void> _refresh() async {
     setState(() {
       _friendsListFuture = _userService.getCurrentUserFriendsList();
     });
-
     await Future.delayed(const Duration(milliseconds: 400));
   }
 
@@ -51,19 +47,12 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('Bảng tin'),
         backgroundColor: const Color(0xFF1877F2),
         iconTheme: const IconThemeData(color: Colors.white),
-        titleTextStyle: const TextStyle(
-            color: Colors.white,
-            fontSize: 20,
-            fontWeight: FontWeight.bold
-        ),
+        titleTextStyle: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
       ),
-
       backgroundColor: const Color(0xFFF0F2F5),
-
       body: RefreshIndicator(
         color: Colors.blue,
         onRefresh: _refresh,
-
         child: FutureBuilder<List<String>>(
           future: _friendsListFuture,
           builder: (context, friendSnap) {
@@ -74,8 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
               return const Center(child: Text("Không thể tải danh sách bạn bè."));
             }
 
-            final allowedUIDs = friendSnap.data!;
-
+            final allowedUIDs = List<String>.from(friendSnap.data!);
             if (!allowedUIDs.contains(currentUser!.uid)) {
               allowedUIDs.add(currentUser!.uid);
             }
@@ -90,33 +78,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 final docs = postSnap.data!.docs;
 
                 final filtered = docs.where((doc) {
-                  final uid = doc["UID"];
-                  return allowedUIDs.contains(uid);
+                  final data = doc.data() as Map<String, dynamic>;
+                  final uid = data["UID"] as String?;
+                  return uid != null && allowedUIDs.contains(uid);
                 }).toList();
 
-                /// ================================
-                /// FIX QUAN TRỌNG
-                /// Nếu không có bài viết → dùng ListView để RefreshIndicator hoạt động
-                /// ================================
                 if (filtered.isEmpty) {
                   return ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     children: const [
                       SizedBox(height: 200),
-                      Center(
-                        child: Text(
-                          "Chưa có bài viết nào.",
-                          style: TextStyle(fontSize: 16),
-                        ),
-                      ),
+                      Center(child: Text("Chưa có bài viết nào.", style: TextStyle(fontSize: 16))),
                     ],
                   );
                 }
 
                 filtered.sort((a, b) {
-                  final ta = a["timestamp"] as Timestamp;
-                  final tb = b["timestamp"] as Timestamp;
-                  return tb.compareTo(ta);
+                  final ta = (a.data() as Map<String, dynamic>)["timestamp"] as Timestamp?;
+                  final tb = (b.data() as Map<String, dynamic>)["timestamp"] as Timestamp?;
+                  return (tb ?? Timestamp.now()).compareTo(ta ?? Timestamp.now());
                 });
 
                 final lastIndex = filtered.length - 1;
@@ -126,21 +106,16 @@ class _HomeScreenState extends State<HomeScreen> {
                   itemCount: filtered.length,
                   itemBuilder: (context, index) {
                     final post = Post.fromFirestore(filtered[index]);
-
                     return Column(
                       children: [
                         PostCard(
                           post: post,
                           showLikeButton: true,
                           showCommentButton: true,
+                          source: "home",
                         ),
-
                         if (index != lastIndex)
-                          const Divider(
-                            height: 12,
-                            thickness: 10,
-                            color: Color(0xFFF0F2F5),
-                          ),
+                          const Divider(height: 12, thickness: 10, color: Color(0xFFF0F2F5)),
                       ],
                     );
                   },
@@ -150,14 +125,9 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         ),
       ),
-
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
-          final result = await Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const CreatePostScreen()),
-          );
-
+          final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => const CreatePostScreen()));
           if (result == true) {
             _refresh();
           }
