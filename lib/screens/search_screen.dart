@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:zalo_app/screens/profile_screen.dart';
+import 'package:zalo_app/screens/chat_screen.dart'; // - Đảm bảo đã import ChatScreen
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -47,7 +48,8 @@ class _SearchScreenState extends State<SearchScreen> {
         final allUsers = snap.data!.docs;
 
         final filtered = allUsers.where((doc) {
-          final data = doc.data() as Map<String, dynamic>;
+          // [FIX] Lấy data an toàn
+          final data = (doc.data() as Map<String, dynamic>?) ?? {};
           final uid = data["uid"];
 
           if (uid == currentUid) return false;
@@ -62,8 +64,8 @@ class _SearchScreenState extends State<SearchScreen> {
 
         // ⭐ Sắp xếp: bạn bè lên trước
         filtered.sort((a, b) {
-          final da = a.data() as Map<String, dynamic>;
-          final db = b.data() as Map<String, dynamic>;
+          final da = (a.data() as Map<String, dynamic>?) ?? {};
+          final db = (b.data() as Map<String, dynamic>?) ?? {};
           final uidA = da["uid"];
           final uidB = db["uid"];
           final isFriendA = friends.contains(uidA);
@@ -88,8 +90,8 @@ class _SearchScreenState extends State<SearchScreen> {
             ),
 
             ...filtered.map((doc) {
-              final user = doc.data() as Map<String, dynamic>;
-              final uid = user["uid"];
+              final user = (doc.data() as Map<String, dynamic>?) ?? {};
+              final uid = user["uid"]; // Lấy UID chính xác từ field
               final isFriend = friends.contains(uid);
 
               final displayName = (user["displayName"] == null ||
@@ -98,25 +100,60 @@ class _SearchScreenState extends State<SearchScreen> {
                   : user["displayName"];
 
               final email = user["email"] ?? "";
+              final avatarUrl = user["photoURL"];
 
               return ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.person)),
+                leading: CircleAvatar(
+                  backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
+                      ? NetworkImage(avatarUrl)
+                      : null,
+                  child: (avatarUrl == null || avatarUrl.isEmpty)
+                      ? const Icon(Icons.person)
+                      : null,
+                ),
                 title: Text(displayName),
                 subtitle: Text(email),
-                trailing: Text(
-                  isFriend ? "Bạn bè" : "Người lạ",
-                  style: TextStyle(
-                    color: isFriend ? Colors.green : Colors.grey,
-                    fontWeight: FontWeight.bold,
-                  ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      isFriend ? "Bạn bè" : "Người lạ",
+                      style: TextStyle(
+                        color: isFriend ? Colors.green : Colors.grey,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    // ============================================
+                    // 🔴 NÚT NHẮN TIN - CHUYỂN SANG CHAT 1-1
+                    // ============================================
+                    IconButton(
+                      icon: const Icon(Icons.message, color: Color(0xFF1877F2)),
+                      onPressed: () {
+                        if (uid != null) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => ChatScreen(
+                                receiverId: uid,
+                                receiverName: displayName,
+                                receiverAvatar: avatarUrl,
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  ],
                 ),
                 onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ProfileScreen(userId: uid),
-                    ),
-                  );
+                  if (uid != null) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ProfileScreen(userId: uid),
+                      ),
+                    );
+                  }
                 },
               );
             }),
@@ -138,9 +175,9 @@ class _SearchScreenState extends State<SearchScreen> {
           .doc(currentUid)
           .snapshots(),
       builder: (context, snap) {
-        if (!snap.hasData) return const SizedBox();
+        if (!snap.hasData || snap.data?.data() == null) return const SizedBox();
 
-        final data = snap.data!.data() as Map<String, dynamic>;
+        final data = (snap.data!.data() as Map<String, dynamic>?) ?? {};
         final friends = (data["friends"] as List?) ?? [];
 
         if (friends.isEmpty) {
@@ -151,30 +188,59 @@ class _SearchScreenState extends State<SearchScreen> {
           padding: EdgeInsets.zero,
           itemCount: friends.length,
           itemBuilder: (context, i) {
+            final friendId = friends[i]; // ID của bạn bè
+
             return FutureBuilder<DocumentSnapshot>(
               future: FirebaseFirestore.instance
                   .collection("users")
-                  .doc(friends[i])
+                  .doc(friendId)
                   .get(),
               builder: (context, userSnap) {
-                if (!userSnap.hasData) return const SizedBox();
+                if (!userSnap.hasData || userSnap.data?.data() == null) {
+                  return const SizedBox();
+                }
 
-                final friend = userSnap.data!.data() as Map<String, dynamic>;
+                final friend = (userSnap.data!.data() as Map<String, dynamic>?) ?? {};
                 final displayName = (friend["displayName"] == null ||
                     friend["displayName"].toString().trim().isEmpty)
                     ? "Người dùng"
                     : friend["displayName"];
+                final avatarUrl = friend["photoURL"];
 
                 return ListTile(
-                  leading: const CircleAvatar(child: Icon(Icons.person)),
+                  leading: CircleAvatar(
+                    backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty)
+                        ? NetworkImage(avatarUrl)
+                        : null,
+                    child: (avatarUrl == null || avatarUrl.isEmpty)
+                        ? const Icon(Icons.person)
+                        : null,
+                  ),
                   title: Text(displayName),
                   subtitle: Text(friend["email"] ?? ""),
-                  trailing: const SizedBox(),
+                  // ============================================
+                  // 🔴 NÚT NHẮN TIN - CHUYỂN SANG CHAT 1-1
+                  // ============================================
+                  trailing: IconButton(
+                    icon: const Icon(Icons.message, color: Color(0xFF1877F2)),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ChatScreen(
+                            receiverId: friendId, // ID chính xác của bạn bè
+                            receiverName: displayName,
+                            receiverAvatar: avatarUrl,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                   onTap: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => ProfileScreen(userId: friends[i]),
+                        builder: (_) => ProfileScreen(userId: friendId),
                       ),
                     );
                   },
@@ -188,12 +254,12 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   // ======================================================
-  // UI CHÍNH — CHỐNG OVERFLOW, CUỘN MƯỢT
+  // UI CHÍNH
   // ======================================================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      resizeToAvoidBottomInset: true, // ⭐ GIẢI QUYẾT VỤ OVERFLOW
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: const Text("Tìm kiếm bạn bè"),
         backgroundColor: const Color(0xFF1877F2),
@@ -234,8 +300,8 @@ class _SearchScreenState extends State<SearchScreen> {
                         .doc(currentUid)
                         .snapshots(),
                     builder: (context, snap) {
-                      if (!snap.hasData) return const SizedBox();
-                      final data = snap.data!.data() as Map<String, dynamic>;
+                      if (!snap.hasData || snap.data?.data() == null) return const SizedBox();
+                      final data = (snap.data!.data() as Map<String, dynamic>?) ?? {};
                       final friends = (data["friends"] as List?) ?? [];
                       return _buildSuggestionList(friends);
                     },
@@ -253,7 +319,7 @@ class _SearchScreenState extends State<SearchScreen> {
                     ),
                   ),
 
-                  // LIST BẠN BÈ — CUỘN TRONG KHUNG CỐ ĐỊNH
+                  // LIST BẠN BÈ
                   SizedBox(
                     height: 500,
                     child: _buildFriendsList(),

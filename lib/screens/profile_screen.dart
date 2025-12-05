@@ -1,3 +1,4 @@
+// lib/screens/profile_screen.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -31,17 +32,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _targetUserId = widget.userId ?? currentUser!.uid;
-    _isMyProfile = (_targetUserId == currentUser!.uid);
+    // Xử lý trường hợp currentUser null
+    final uid = currentUser?.uid ?? '';
+    _targetUserId = widget.userId ?? uid;
+    _isMyProfile = (_targetUserId == uid);
   }
 
   Future<void> _pickAvatar() async {}
   Future<void> _pickCover() async {}
 
   Future<void> _addPost() async {
-    final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => const CreatePostScreen()));
+    final result = await Navigator.push(
+        context, MaterialPageRoute(builder: (_) => const CreatePostScreen()));
     if (result == true) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Bài viết mới đã được đăng!')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Bài viết mới đã được đăng!')));
       setState(() {});
     }
   }
@@ -55,7 +60,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   Widget build(BuildContext context) {
     if (currentUser == null) {
-      return const Scaffold(body: Center(child: Text("Vui lòng đăng nhập để xem profile.")));
+      return const Scaffold(
+          body: Center(child: Text("Vui lòng đăng nhập để xem profile.")));
+    }
+
+    if (_targetUserId.isEmpty) {
+      return const Scaffold(body: Center(child: Text("Không tìm thấy người dùng.")));
     }
 
     return Scaffold(
@@ -70,8 +80,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             onSelected: (value) {
               if (value == 'logout') _logout();
             },
-            itemBuilder: (context) => const [
-              PopupMenuItem(
+            itemBuilder: (context) => [
+              const PopupMenuItem(
                 value: 'logout',
                 child: Row(
                   children: [
@@ -87,49 +97,91 @@ class _ProfileScreenState extends State<ProfileScreen> {
             : null,
       ),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance.collection('users').doc(_targetUserId).snapshots(),
+        stream: FirebaseFirestore.instance
+            .collection('users')
+            .doc(_targetUserId)
+            .snapshots(),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+          // 1. AN TOÀN: Kiểm tra loading
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-          final userData = snapshot.data!.data()!;
+          // 2. AN TOÀN: Kiểm tra dữ liệu
+          if (!snapshot.hasData || snapshot.data == null || !snapshot.data!.exists) {
+            return const Center(child: Text("Người dùng không tồn tại hoặc chưa có dữ liệu."));
+          }
+
+          // 3. AN TOÀN: Lấy dữ liệu với giá trị mặc định
+          final userData = snapshot.data!.data() ?? {};
           final displayName = userData['displayName'] ?? 'Chưa có tên';
           final bio = userData['bio'] ?? 'Chưa có tiểu sử';
           final friends = (userData['friends'] as List?) ?? [];
           final friendsCount = friends.length;
           final bool isFriend = friends.contains(currentUser!.uid);
 
-          ImageProvider? avatarProvider = _avatarImage != null ? FileImage(_avatarImage!) : null;
-          ImageProvider? coverProvider = _coverImage != null ? FileImage(_coverImage!) : null;
+          ImageProvider? avatarProvider =
+          _avatarImage != null ? FileImage(_avatarImage!) : null;
+          ImageProvider? coverProvider =
+          _coverImage != null ? FileImage(_coverImage!) : null;
+
+          // Nếu có ảnh từ Firebase thì ưu tiên hiển thị (bạn có thể bỏ qua nếu chưa làm upload ảnh)
+          if (avatarProvider == null && userData['photoURL'] != null && userData['photoURL'].isNotEmpty) {
+            avatarProvider = NetworkImage(userData['photoURL']);
+          }
 
           return CustomScrollView(
             slivers: [
               SliverToBoxAdapter(
                 child: Column(
                   children: [
-                    ProfileCover(coverImage: coverProvider, isMyProfile: _isMyProfile, onPickCover: _pickCover),
-                    ProfileAvatar(avatarImage: avatarProvider, isMyProfile: _isMyProfile, onPickAvatar: _pickAvatar),
-                    ProfileInfo(displayName: displayName, bio: bio, friendsCount: friendsCount, onFriendsTap: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => FriendsScreen(userId: _targetUserId)));
-                    }),
+                    ProfileCover(
+                        coverImage: coverProvider,
+                        isMyProfile: _isMyProfile,
+                        onPickCover: _pickCover),
+                    ProfileAvatar(
+                        avatarImage: avatarProvider,
+                        isMyProfile: _isMyProfile,
+                        onPickAvatar: _pickAvatar),
+                    ProfileInfo(
+                        displayName: displayName,
+                        bio: bio,
+                        friendsCount: friendsCount,
+                        onFriendsTap: () {
+                          Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) =>
+                                      FriendsScreen(userId: _targetUserId)));
+                        }),
                     const SizedBox(height: 20),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: _isMyProfile
                           ? Row(
                         children: [
-                          Expanded(child: AddPostButton(onAddPost: _addPost)),
+                          Expanded(
+                              child: AddPostButton(onAddPost: _addPost)),
                           const SizedBox(width: 10),
-                          Expanded(child: ActionButton(isMyProfile: _isMyProfile, targetUserId: _targetUserId)),
+                          Expanded(
+                              child: ActionButton(
+                                  isMyProfile: _isMyProfile,
+                                  targetUserId: _targetUserId)),
                         ],
                       )
-                          : ActionButton(isMyProfile: _isMyProfile, targetUserId: _targetUserId),
+                          : ActionButton(
+                          isMyProfile: _isMyProfile,
+                          targetUserId: _targetUserId),
                     ),
                     const SizedBox(height: 20),
                     Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 10),
                       color: const Color(0xFFF0F2F5),
-                      child: const Text("Bài viết", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      child: const Text("Bài viết",
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold)),
                     ),
                   ],
                 ),
@@ -153,27 +205,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       .orderBy('timestamp', descending: true)
                       .snapshots(),
                   builder: (context, postSnapshot) {
-                    if (!postSnapshot.hasData) {
-                      return const SliverToBoxAdapter(child: Center(child: CircularProgressIndicator()));
+                    if (postSnapshot.connectionState == ConnectionState.waiting) {
+                      return const SliverToBoxAdapter(
+                          child: Padding(
+                            padding: EdgeInsets.all(20),
+                            child: Center(child: CircularProgressIndicator()),
+                          ));
+                    }
+
+                    if (!postSnapshot.hasData || postSnapshot.data!.docs.isEmpty) {
+                      return const SliverToBoxAdapter(
+                          child: Padding(
+                              padding: EdgeInsets.all(20),
+                              child: Center(child: Text("Chưa có bài viết nào."))));
                     }
 
                     final docs = postSnapshot.data!.docs;
-                    if (docs.isEmpty) {
-                      return const SliverToBoxAdapter(
-                        child: Padding(padding: EdgeInsets.all(20), child: Center(child: Text("Chưa có bài viết nào."))),
-                      );
-                    }
 
                     return SliverList(
                       delegate: SliverChildBuilderDelegate(
                             (context, index) {
                           final post = Post.fromFirestore(docs[index]);
-                          return Column(
-                            children: [
-                              PostCard(post: post, showLikeButton: true, showCommentButton: true, source: "profile"),
-                              const Divider(height: 12, thickness: 10, color: Color(0xFFF0F2F5)),
-                            ],
-                          );
+                          return Column(children: [
+                            PostCard(
+                                post: post,
+                                showLikeButton: true,
+                                showCommentButton: true),
+                            const Divider(
+                                height: 12,
+                                thickness: 10,
+                                color: Color(0xFFF0F2F5)),
+                          ]);
                         },
                         childCount: docs.length,
                       ),

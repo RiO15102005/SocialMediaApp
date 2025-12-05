@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'edit_profile_screen.dart';
+import 'chat_screen.dart'; // - Import quan trọng
 
 class ActionButton extends StatefulWidget {
   final bool isMyProfile;
@@ -25,7 +26,7 @@ class _ActionButtonState extends State<ActionButton> {
   String get currentUid => _auth.currentUser!.uid;
   String get currentEmail => _auth.currentUser!.email ?? "";
 
-  // Create a notification (simple)
+  // 1. Tạo thông báo (notification)
   Future<void> _createNotification({
     required String receiverId,
     required String type,
@@ -37,7 +38,7 @@ class _ActionButtonState extends State<ActionButton> {
         currentEmail;
 
     await _firestore.collection("notifications").add({
-      "userId": receiverId, // who will see this notification
+      "userId": receiverId,
       "senderId": currentUid,
       "senderName": name,
       "type": type,
@@ -46,7 +47,7 @@ class _ActionButtonState extends State<ActionButton> {
     });
   }
 
-  // send request (doc id = sender_receiver)
+  // 2. Gửi lời mời kết bạn
   Future<void> sendRequest(String targetId) async {
     final reqId = "${currentUid}_$targetId";
     await _firestore.collection("friend_requests").doc(reqId).set({
@@ -58,19 +59,16 @@ class _ActionButtonState extends State<ActionButton> {
     await _createNotification(receiverId: targetId, type: "friend_request");
   }
 
-  // cancel request (sender cancels) -> set status cancelled
+  // 3. Hủy lời mời
   Future<void> cancelRequest(String targetId) async {
     final reqId = "${currentUid}_$targetId";
 
-    // update trạng thái
     await _firestore.collection("friend_requests").doc(reqId).update({
       "status": "cancelled",
       "updatedAt": FieldValue.serverTimestamp(),
     }).catchError((_) {});
 
-    // ------------------------------------------------------
-    // XÓA THÔNG BÁO BÊN B (y như FriendButton)
-    // ------------------------------------------------------
+    // Xóa thông báo tương ứng
     final q = await _firestore
         .collection("notifications")
         .where("userId", isEqualTo: targetId)
@@ -83,7 +81,7 @@ class _ActionButtonState extends State<ActionButton> {
     }
   }
 
-  // unfriend (remove both sides)
+  // 4. Hủy kết bạn
   Future<void> unfriend(String targetId) async {
     await _firestore.collection("users").doc(currentUid).update({
       "friends": FieldValue.arrayRemove([targetId])
@@ -118,6 +116,7 @@ class _ActionButtonState extends State<ActionButton> {
   Widget build(BuildContext context) {
     final targetId = widget.targetUserId;
 
+    // Nếu là profile của mình -> Nút chỉnh sửa
     if (widget.isMyProfile) {
       return SizedBox(
         width: double.infinity,
@@ -139,25 +138,46 @@ class _ActionButtonState extends State<ActionButton> {
       );
     }
 
-    // watch target user's friend list (to know if already friends)
+    // Lắng nghe dữ liệu user mục tiêu (để biết tên, avatar và danh sách bạn bè)
     return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
       stream: _firestore.collection("users").doc(targetId).snapshots(),
       builder: (context, userSnap) {
         if (!userSnap.hasData) return const SizedBox();
-        final friends = (userSnap.data?.data()?["friends"] as List?) ?? [];
+
+        // ⭐ Lấy thông tin user để chuyển sang màn hình chat
+        final userData = userSnap.data!.data();
+        final targetName = userData?['displayName'] ?? "Người dùng";
+        final targetAvatar = userData?['photoURL'];
+
+        final friends = (userData?["friends"] as List?) ?? [];
         final isFriend = friends.contains(currentUid);
 
-        // Prepare two possible request doc ids
         final reqId1 = "${currentUid}_$targetId";
         final reqId2 = "${targetId}_$currentUid";
 
-        // Listen to friend_requests documents for both possible ids
+        // Lắng nghe trạng thái lời mời kết bạn
         return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
           stream: _firestore
               .collection("friend_requests")
               .where(FieldPath.documentId, whereIn: [reqId1, reqId2])
               .snapshots(),
           builder: (context, reqSnap) {
+
+            // Hàm tiện ích để mở ChatScreen
+            void openChat() {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ChatScreen(
+                    receiverId: targetId,
+                    receiverName: targetName,
+                    receiverAvatar: targetAvatar,
+                  ),
+                ),
+              );
+            }
+
+            // Trường hợp 1: Chưa có dữ liệu request, nhưng đã là bạn bè
             if (!reqSnap.hasData) {
               if (isFriend) {
                 return Row(
@@ -172,8 +192,9 @@ class _ActionButtonState extends State<ActionButton> {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
+                      // ⭐ SỬA: Thay hàm rỗng bằng openChat
                       child: _btn("Nhắn tin", Icons.message,
-                          const Color(0xFF1877F2), Colors.white, () {}),
+                          const Color(0xFF1877F2), Colors.white, openChat),
                     ),
                   ],
                 );
@@ -183,7 +204,7 @@ class _ActionButtonState extends State<ActionButton> {
                       () => sendRequest(targetId));
             }
 
-            // Determine status
+            // Kiểm tra trạng thái request
             String? status;
             bool sentByMe = false;
             bool sentToMe = false;
@@ -199,6 +220,7 @@ class _ActionButtonState extends State<ActionButton> {
               }
             }
 
+            // Trường hợp 2: Đã là bạn bè (Dù request cũ thế nào)
             if (isFriend) {
               return Row(
                 children: [
@@ -212,14 +234,15 @@ class _ActionButtonState extends State<ActionButton> {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
+                    // ⭐ SỬA: Thay hàm rỗng bằng openChat
                     child: _btn("Nhắn tin", Icons.message,
-                        const Color(0xFF1877F2), Colors.white, () {}),
+                        const Color(0xFF1877F2), Colors.white, openChat),
                   ),
                 ],
               );
             }
 
-            // pending
+            // Trường hợp 3: Đang chờ xử lý (Pending)
             if (status == "pending") {
               if (sentToMe) {
                 return _btn(
@@ -250,13 +273,7 @@ class _ActionButtonState extends State<ActionButton> {
               }
             }
 
-            // declined / cancelled
-            if (status == "declined" || status == "cancelled") {
-              return _btn("Thêm bạn bè", Icons.person_add_alt_1,
-                  const Color(0xFF1877F2), Colors.white,
-                      () => sendRequest(targetId));
-            }
-
+            // Mặc định: Nút thêm bạn bè
             return _btn("Thêm bạn bè", Icons.person_add_alt_1,
                 const Color(0xFF1877F2), Colors.white,
                     () => sendRequest(targetId));
@@ -266,6 +283,7 @@ class _ActionButtonState extends State<ActionButton> {
     );
   }
 
+  // Widget nút bấm chung
   Widget _btn(String label, IconData icon, Color bg, Color textColor, VoidCallback onTap) {
     return SizedBox(
       width: double.infinity,
