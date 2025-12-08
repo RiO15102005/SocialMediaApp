@@ -44,7 +44,6 @@ class _CommentScreenState extends State<CommentScreen> {
 
   final Set<String> _expanded = {};
 
-  // Flag to indicate if the post is pending deletion or hiding
   bool _isPostActionPending = false;
 
   @override
@@ -65,6 +64,18 @@ class _CommentScreenState extends State<CommentScreen> {
 
   Future<void> _refresh() async {
     setState(() {});
+  }
+
+  void _onPostSaved(bool isSaved) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).removeCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isSaved ? "Post saved" : "Post unsaved"),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   void _handlePostDeleted() {
@@ -171,6 +182,7 @@ class _CommentScreenState extends State<CommentScreen> {
                               source: widget.source,
                               onPostDeleted: _handlePostDeleted,
                               onPostHidden: _handlePostHidden,
+                              onPostSaved: _onPostSaved,
                             ),
                           ),
                         Container(height: 8, width: double.infinity, color: const Color(0xFFF0F2F5)),

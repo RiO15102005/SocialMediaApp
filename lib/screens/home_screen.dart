@@ -101,10 +101,14 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _onPostSaved() {
+  void _onPostSaved(bool isSaved) {
     if (mounted) {
+      ScaffoldMessenger.of(context).removeCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Post saved!")),
+        SnackBar(
+          content: Text(isSaved ? "Post saved" : "Post unsaved"),
+          duration: const Duration(seconds: 2),
+        ),
       );
     }
   }
@@ -123,7 +127,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: onUndo,
             child: const Text('Undo', style: TextStyle(color: Colors.blueAccent)),
           ),
-        ],
+        ], 
       ),
     );
   }
@@ -157,7 +161,7 @@ class _HomeScreenState extends State<HomeScreen> {
               return const Center(child: Text("Không thể tải danh sách bạn bè."));
             }
 
-            final allowedUIDs = List<String>.from(friendSnap.data!);
+            final allowedUIDs = List<String>.from(friendSnap.data!); 
             if (!allowedUIDs.contains(currentUser!.uid)) {
               allowedUIDs.add(currentUser!.uid);
             }

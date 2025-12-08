@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import 'dart:math' as math;
 import '../models/post_model.dart';
 import '../services/post_service.dart';
 import '../screens/comment_screen.dart';
@@ -12,7 +13,7 @@ class PostCard extends StatefulWidget {
   final String source;
   final VoidCallback? onPostDeleted;
   final VoidCallback? onPostHidden;
-  final VoidCallback? onPostSaved;
+  final ValueChanged<bool>? onPostSaved;
 
   const PostCard({
     super.key,
@@ -54,8 +55,32 @@ class _PostCardState extends State<PostCard> {
 
   Future<void> _toggleSave() async {
     if (currentUser == null) return;
-    await _postService.toggleSavePost(widget.post.postId);
-    widget.onPostSaved?.call();
+    final uid = currentUser!.uid;
+    final isCurrentlySaved = widget.post.savers.contains(uid);
+    final bool newSaveState = !isCurrentlySaved;
+
+    setState(() {
+      if (newSaveState) {
+        widget.post.savers.add(uid);
+      } else {
+        widget.post.savers.remove(uid);
+      }
+    });
+
+    widget.onPostSaved?.call(newSaveState);
+
+    try {
+      await _postService.toggleSavePost(widget.post.postId);
+    } catch (_) {
+      setState(() {
+        if (newSaveState) {
+          widget.post.savers.remove(uid);
+        } else {
+          widget.post.savers.add(uid);
+        }
+      });
+      widget.onPostSaved?.call(isCurrentlySaved);
+    }
   }
 
   void _openComments() {
@@ -97,6 +122,7 @@ class _PostCardState extends State<PostCard> {
     final bool isLiked = currentUser != null && widget.post.likes.contains(currentUser!.uid);
     final bool isSaved = currentUser != null && widget.post.savers.contains(currentUser!.uid);
     final String timeStr = _formatTimestamp(widget.post.timestamp.toDate());
+    final int likeCount = widget.post.likes.length;
 
     final bool longContent = widget.post.content.length > 140;
     final String displayContent =
@@ -173,72 +199,58 @@ class _PostCardState extends State<PostCard> {
             ),
           const SizedBox(height: 8),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               if (widget.showLikeButton)
-                InkWell(
-                  onTap: _toggleLike,
-                  child: Row(
-                    children: [
-                      Icon(
-                        isLiked ? Icons.thumb_up : Icons.thumb_up_outlined,
-                        color: isLiked ? const Color(0xFF1877F2) : Colors.grey,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        "Thích (${widget.post.likes.length})",
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: isLiked ? const Color(0xFF1877F2) : Colors.grey,
-                          fontWeight: isLiked ? FontWeight.w600 : FontWeight.normal,
-                        ),
-                      ),
-                    ],
+                IconButton(
+                  icon: Icon(
+                    isLiked ? Icons.favorite : Icons.favorite_border,
+                    color: isLiked ? Colors.red : Colors.grey,
                   ),
+                  onPressed: _toggleLike,
                 ),
+              if (likeCount > 0)
+                Text(
+                  '$likeCount',
+                  style: const TextStyle(color: Colors.grey),
+                ),
+              const SizedBox(width: 16),
               if (widget.showCommentButton)
-                InkWell(
-                  onTap: _openComments,
-                  child: Row(
-                    children: [
-                      const Icon(Icons.chat_bubble_outline, size: 18, color: Colors.grey),
-                      const SizedBox(width: 6),
-                      const Text(
-                        "Bình luận",
-                        style: TextStyle(fontSize: 13, color: Colors.grey),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        "(${widget.post.commentsCount})",
-                        style: const TextStyle(fontSize: 13, color: Colors.grey),
-                      ),
-                    ],
-                  ),
+                IconButton(
+                  icon: const Icon(Icons.chat_bubble_outline_rounded, color: Colors.grey),
+                  onPressed: _openComments,
                 ),
-              InkWell(
-                onTap: _toggleSave,
-                child: Row(
-                  children: [
-                    Icon(
-                      isSaved ? Icons.bookmark : Icons.bookmark_border,
-                      color: isSaved ? const Color(0xFF1877F2) : Colors.grey,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      "Lưu",
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: isSaved ? const Color(0xFF1877F2) : Colors.grey,
-                        fontWeight: isSaved ? FontWeight.w600 : FontWeight.normal,
-                      ),
-                    ),
-                  ],
+              if (widget.post.commentsCount > 0)
+                Text(
+                  '${widget.post.commentsCount}',
+                  style: const TextStyle(color: Colors.grey),
                 ),
+              const SizedBox(width: 16),
+              IconButton(
+                icon: const Icon(Icons.near_me_outlined, color: Colors.grey),
+                onPressed: () {
+                  // TODO: Implement send functionality.
+                },
+              ),
+              const Spacer(),
+              IconButton(
+                icon: Icon(
+                  isSaved ? Icons.bookmark : Icons.bookmark_border,
+                  color: isSaved ? Theme.of(context).primaryColor : Colors.grey,
+                  weight: isSaved ? 700 : 400,
+                ),
+                onPressed: _toggleSave,
               ),
             ],
           ),
+          if (isLiked && likeCount > 1)
+            Padding(
+              padding: const EdgeInsets.only(left: 12.0, top: 4.0),
+              child: Text(
+                'Liked by you and ${likeCount - 1} other${likeCount - 1 > 1 ? "s" : ""}',
+                style: const TextStyle(color: Colors.grey),
+              ),
+            ),
+          const SizedBox(height: 8),
         ],
       ),
     );

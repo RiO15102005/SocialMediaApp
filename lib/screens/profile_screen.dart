@@ -52,11 +52,20 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
     super.dispose();
   }
 
-  void _onPostSaved() {
+  void _onPostSaved(bool isSaved) {
     if (mounted) {
+      ScaffoldMessenger.of(context).removeCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Bài viết đã được lưu!")),
+        SnackBar(
+          content: Text(isSaved ? "Bài viết đã được lưu!" : "Đã bỏ lưu bài viết."),
+          duration: const Duration(seconds: 2),
+          backgroundColor: Colors.grey[800],
+        ),
       );
+      // If on the saved tab and a post is unsaved, refresh the list.
+      if (!isSaved && _tabController.index == 1) {
+        setState(() {});
+      }
     }
   }
 

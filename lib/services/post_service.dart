@@ -248,7 +248,6 @@ class PostService {
   }
 
   Stream<QuerySnapshot> getSavedPostsStream(String userId) {
-    // This query avoids the composite index requirement.
     return _firestore
         .collection(postCol)
         .where('savers', arrayContains: userId)
