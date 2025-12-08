@@ -1,5 +1,3 @@
-// lib/models/post_model.dart
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class Post {
@@ -8,9 +6,12 @@ class Post {
   final String userName;
   final String content;
   final List<String> likes;
+  final List<String> savers;
   final int shares;
   final Timestamp timestamp;
   final int commentsCount;
+  bool isHidden;
+  bool isDeleted;
 
   Post({
     required this.postId,
@@ -18,9 +19,12 @@ class Post {
     required this.userName,
     required this.content,
     required this.likes,
+    required this.savers,
     required this.shares,
     required this.timestamp,
     required this.commentsCount,
+    this.isHidden = false,
+    this.isDeleted = false,
   });
 
   factory Post.fromFirestore(DocumentSnapshot doc) {
@@ -32,9 +36,12 @@ class Post {
       userName: data['userName'] ?? 'Ẩn danh',
       content: data['content'] ?? '',
       likes: List<String>.from(data['likes'] ?? []),
+      savers: List<String>.from(data['savers'] ?? []),
       shares: data['shares'] ?? 0,
       timestamp: data['timestamp'] ?? Timestamp.now(),
       commentsCount: data['commentsCount'] ?? 0,
+      isHidden: data['isHidden'] ?? false,
+      isDeleted: data['isDeleted'] ?? false,
     );
   }
 }

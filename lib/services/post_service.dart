@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../models/post_model.dart';
 
 class PostService {
   final _firestore = FirebaseFirestore.instance;
@@ -21,8 +22,11 @@ class PostService {
       "userName": userName,
       "content": content.trim(),
       "likes": [],
+      "savers": [],
       "commentsCount": 0,
       "timestamp": Timestamp.now(),
+      "isHidden": false,
+      "isDeleted": false,
     });
 
     for (var f in friends) {
@@ -72,22 +76,50 @@ class PostService {
     }
   }
 
+  Future<void> toggleSavePost(String postId) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final postRef = _firestore.collection(postCol).doc(postId);
+    final snap = await postRef.get();
+    final data = snap.data() as Map<String, dynamic>?;
+
+    if (data == null) return;
+
+    final savers = List<String>.from(data['savers'] ?? []);
+    final isSaved = savers.contains(user.uid);
+
+    if (isSaved) {
+      await postRef.update({"savers": FieldValue.arrayRemove([user.uid])});
+    } else {
+      await postRef.update({"savers": FieldValue.arrayUnion([user.uid])});
+    }
+  }
+
   Future<void> deletePost(String postId) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
     final postRef = _firestore.collection(postCol).doc(postId);
-    final doc = await postRef.get();
-    final data = doc.data() as Map<String, dynamic>?;
+    await postRef.update({'isDeleted': true});
+  }
 
-    if (!doc.exists || data == null || data['UID'] != user.uid) return;
+  Future<void> unDeletePost(String postId) async {
+    final postRef = _firestore.collection(postCol).doc(postId);
+    await postRef.update({'isDeleted': false});
+  }
 
-    final comments = await postRef.collection(commentCol).get();
-    for (final c in comments.docs) {
-      await c.reference.delete();
-    }
+  Future<void> hidePost(String postId) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
 
-    await postRef.delete();
+    final postRef = _firestore.collection(postCol).doc(postId);
+    await postRef.update({'isHidden': true});
+  }
+
+  Future<void> unhidePost(String postId) async {
+    final postRef = _firestore.collection(postCol).doc(postId);
+    await postRef.update({'isHidden': false});
   }
 
   Stream<QuerySnapshot> getCommentsStream(String postId) {
@@ -204,6 +236,22 @@ class PostService {
     return _firestore
         .collection(postCol)
         .orderBy("timestamp", descending: true)
+        .snapshots();
+  }
+
+  Stream<QuerySnapshot> getUserPostsStream(String userId) {
+    return _firestore
+        .collection(postCol)
+        .where('UID', isEqualTo: userId)
+        .orderBy("timestamp", descending: true)
+        .snapshots();
+  }
+
+  Stream<QuerySnapshot> getSavedPostsStream(String userId) {
+    // This query avoids the composite index requirement.
+    return _firestore
+        .collection(postCol)
+        .where('savers', arrayContains: userId)
         .snapshots();
   }
 }

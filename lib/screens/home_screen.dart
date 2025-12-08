@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -20,6 +21,11 @@ class _HomeScreenState extends State<HomeScreen> {
   final User? currentUser = FirebaseAuth.instance.currentUser;
 
   late Future<List<String>> _friendsListFuture;
+  final String _emptyMessage = "This place is quiet... Let's break the silence!";
+
+  // State for managing inline undo actions
+  final Map<String, String> _pendingActions = {}; // postId -> 'hide' or 'delete'
+  final Map<String, Timer> _pendingTimers = {};
 
   @override
   void initState() {
@@ -27,11 +33,99 @@ class _HomeScreenState extends State<HomeScreen> {
     _friendsListFuture = _userService.getCurrentUserFriendsList();
   }
 
+  @override
+  void dispose() {
+    // Cancel all timers when the screen is disposed
+    for (var timer in _pendingTimers.values) {
+      timer.cancel();
+    }
+    super.dispose();
+  }
+
   Future<void> _refresh() async {
+    // Clear pending actions on refresh
+    _clearPendingActions();
     setState(() {
       _friendsListFuture = _userService.getCurrentUserFriendsList();
     });
-    await Future.delayed(const Duration(milliseconds: 400));
+  }
+
+  void _clearPendingActions() {
+    for (var timer in _pendingTimers.values) {
+      timer.cancel();
+    }
+    _pendingTimers.clear();
+    setState(() {
+      _pendingActions.clear();
+    });
+  }
+
+  void _handlePostAction(String postId, String action) {
+    if (!mounted) return;
+
+    // Cancel any existing timer for this post
+    _pendingTimers[postId]?.cancel();
+
+    // Set the pending action to show the inline banner
+    setState(() {
+      _pendingActions[postId] = action;
+    });
+
+    // Start a timer to commit the action after 5 seconds
+    final timer = Timer(const Duration(seconds: 5), () {
+      if (_pendingActions.containsKey(postId)) {
+        if (action == 'delete') {
+          _postService.deletePost(postId);
+        } else if (action == 'hide') {
+          _postService.hidePost(postId);
+        }
+        _pendingActions.remove(postId);
+        _pendingTimers.remove(postId);
+        // No need to call setState, the stream will update the UI
+      }
+    });
+
+    _pendingTimers[postId] = timer;
+  }
+
+  void _undoPostAction(String postId) {
+    if (!mounted) return;
+
+    // Cancel the timer
+    _pendingTimers[postId]?.cancel();
+    _pendingTimers.remove(postId);
+
+    // Remove the pending action to restore the post
+    setState(() {
+      _pendingActions.remove(postId);
+    });
+  }
+
+  void _onPostSaved() {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Post saved!")),
+      );
+    }
+  }
+
+  Widget _buildUndoBanner(String message, VoidCallback onUndo) {
+    return Container(
+      key: UniqueKey(),
+      color: Colors.grey[800],
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(message, style: const TextStyle(color: Colors.white)),
+          TextButton(
+            onPressed: onUndo,
+            child: const Text('Undo', style: TextStyle(color: Colors.blueAccent)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -59,7 +153,7 @@ class _HomeScreenState extends State<HomeScreen> {
             if (friendSnap.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
             }
-            if (!friendSnap.hasData) {
+            if (friendSnap.hasError || !friendSnap.hasData) {
               return const Center(child: Text("Không thể tải danh sách bạn bè."));
             }
 
@@ -71,52 +165,66 @@ class _HomeScreenState extends State<HomeScreen> {
             return StreamBuilder<QuerySnapshot>(
               stream: _postService.getAllPostsStream(),
               builder: (context, postSnap) {
-                if (!postSnap.hasData) {
+                if (postSnap.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
+                }
+                if (postSnap.hasError || !postSnap.hasData) {
+                  return Center(child: Text("Lỗi khi tải bài viết: ${postSnap.error}"));
                 }
 
                 final docs = postSnap.data!.docs;
+                final posts = docs.map((doc) => Post.fromFirestore(doc)).toList();
 
-                final filtered = docs.where((doc) {
-                  final data = doc.data() as Map<String, dynamic>;
-                  final uid = data["UID"] as String?;
-                  return uid != null && allowedUIDs.contains(uid);
+                final visiblePosts = posts.where((post) {
+                  return allowedUIDs.contains(post.userId) &&
+                         !post.isDeleted &&
+                         !post.isHidden &&
+                         !_pendingActions.containsKey(post.postId);
                 }).toList();
 
-                if (filtered.isEmpty) {
-                  return ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    children: const [
-                      SizedBox(height: 200),
-                      Center(child: Text("Chưa có bài viết nào.", style: TextStyle(fontSize: 16))),
-                    ],
+                if (visiblePosts.isEmpty && _pendingActions.isEmpty) {
+                  return LayoutBuilder(
+                    builder: (context, constraints) => SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                        child: Center(
+                          child: Text(
+                            _emptyMessage,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 18, color: Colors.grey),
+                          ),
+                        ),
+                      ),
+                    ),
                   );
                 }
 
-                filtered.sort((a, b) {
-                  final ta = (a.data() as Map<String, dynamic>)["timestamp"] as Timestamp?;
-                  final tb = (b.data() as Map<String, dynamic>)["timestamp"] as Timestamp?;
-                  return (tb ?? Timestamp.now()).compareTo(ta ?? Timestamp.now());
-                });
-
-                final lastIndex = filtered.length - 1;
-
                 return ListView.builder(
-                  padding: EdgeInsets.zero,
-                  itemCount: filtered.length,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  itemCount: posts.length,
                   itemBuilder: (context, index) {
-                    final post = Post.fromFirestore(filtered[index]);
-                    return Column(
-                      children: [
-                        PostCard(
-                          post: post,
-                          showLikeButton: true,
-                          showCommentButton: true,
-                          source: "home",
-                        ),
-                        if (index != lastIndex)
-                          const Divider(height: 12, thickness: 10, color: Color(0xFFF0F2F5)),
-                      ],
+                    final post = posts[index];
+                    final action = _pendingActions[post.postId];
+
+                    if (action != null) {
+                      return _buildUndoBanner(
+                        action == 'delete' ? 'Đã xóa bài viết.' : 'Đã ẩn bài viết.',
+                        () => _undoPostAction(post.postId),
+                      );
+                    } else if (post.isDeleted ||
+                        post.isHidden ||
+                        !allowedUIDs.contains(post.userId)) {
+                      return const SizedBox.shrink();
+                    }
+
+                    return PostCard(
+                      key: ValueKey(post.postId),
+                      post: post,
+                      source: "home",
+                      onPostDeleted: () => _handlePostAction(post.postId, 'delete'),
+                      onPostHidden: () => _handlePostAction(post.postId, 'hide'),
+                      onPostSaved: _onPostSaved,
                     );
                   },
                 );

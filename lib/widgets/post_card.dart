@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
 import '../models/post_model.dart';
 import '../services/post_service.dart';
 import '../screens/comment_screen.dart';
@@ -8,7 +9,10 @@ class PostCard extends StatefulWidget {
   final Post post;
   final bool showLikeButton;
   final bool showCommentButton;
-  final String source; // "home" hoặc "profile"
+  final String source;
+  final VoidCallback? onPostDeleted;
+  final VoidCallback? onPostHidden;
+  final VoidCallback? onPostSaved;
 
   const PostCard({
     super.key,
@@ -16,6 +20,9 @@ class PostCard extends StatefulWidget {
     this.showLikeButton = true,
     this.showCommentButton = true,
     this.source = "home",
+    this.onPostDeleted,
+    this.onPostHidden,
+    this.onPostSaved,
   });
 
   @override
@@ -25,7 +32,7 @@ class PostCard extends StatefulWidget {
 class _PostCardState extends State<PostCard> {
   final PostService _postService = PostService();
   final User? currentUser = FirebaseAuth.instance.currentUser;
-  bool _expanded = false; // xem thêm/thu gọn
+  bool _expanded = false;
 
   Future<void> _toggleLike() async {
     if (currentUser == null) return;
@@ -39,67 +46,70 @@ class _PostCardState extends State<PostCard> {
     try {
       await _postService.toggleLike(widget.post.postId);
     } catch (_) {
-      // rollback nếu Firestore lỗi
       setState(() {
         isLiked ? widget.post.likes.add(uid) : widget.post.likes.remove(uid);
       });
     }
   }
 
+  Future<void> _toggleSave() async {
+    if (currentUser == null) return;
+    await _postService.toggleSavePost(widget.post.postId);
+    widget.onPostSaved?.call();
+  }
+
   void _openComments() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => CommentScreen(post: widget.post, source: widget.source)),
+      MaterialPageRoute(
+        builder: (_) => CommentScreen(
+          post: widget.post,
+          source: widget.source,
+          onPostDeleted: widget.onPostDeleted,
+          onPostHidden: widget.onPostHidden,
+        ),
+      ),
     );
   }
 
-  Future<void> _confirmDeletePost() async {
-    final confirm = await showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text("Xóa bài viết?", style: TextStyle(fontWeight: FontWeight.bold)),
-          content: const Text("Bạn có chắc chắn muốn xóa bài viết này không?"),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text("Hủy")),
-            TextButton(onPressed: () => Navigator.pop(context, true), child: const Text("Xóa", style: TextStyle(color: Colors.red))),
-          ],
-        );
-      },
-    );
+  String _formatTimestamp(DateTime timestamp) {
+    final now = DateTime.now();
+    final difference = now.difference(timestamp);
 
-    if (confirm == true) {
-      await _postService.deletePost(widget.post.postId);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Xóa thành công")));
-      if (widget.source == "home") {
-        Navigator.popUntil(context, (route) => route.isFirst);
+    if (difference.inDays < 7) {
+      if (difference.inHours > 0) {
+        return "${difference.inHours} giờ trước";
+      } else if (difference.inMinutes > 0) {
+        return "${difference.inMinutes} phút trước";
       } else {
-        Navigator.pop(context);
+        return "Vừa xong";
       }
+    } else {
+      return DateFormat('dd/MM').format(timestamp);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool isLiked =
-        currentUser != null && widget.post.likes.contains(currentUser!.uid);
-    final String timeStr =
-    widget.post.timestamp.toDate().toString().substring(0, 16);
+    if (widget.post.isHidden || widget.post.isDeleted) {
+      return const SizedBox.shrink();
+    }
+    final bool isLiked = currentUser != null && widget.post.likes.contains(currentUser!.uid);
+    final bool isSaved = currentUser != null && widget.post.savers.contains(currentUser!.uid);
+    final String timeStr = _formatTimestamp(widget.post.timestamp.toDate());
 
-    // Kiểu Facebook: font nhỏ, nội dung có xem thêm/thu gọn
     final bool longContent = widget.post.content.length > 140;
-    final String displayContent = (!longContent || _expanded)
-        ? widget.post.content
-        : widget.post.content.substring(0, 140) + '...';
+    final String displayContent =
+        (!longContent || _expanded) ? widget.post.content : widget.post.content.substring(0, 140) + '...';
 
     return Container(
       width: double.infinity,
       color: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      margin: const EdgeInsets.symmetric(vertical: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // HEADER
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -112,27 +122,30 @@ class _PostCardState extends State<PostCard> {
                   Text(timeStr, style: const TextStyle(fontSize: 12, color: Colors.grey)),
                 ]),
               ),
-              if (currentUser?.uid == widget.post.userId)
-                PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_horiz, size: 20),
-                  onSelected: (value) async {
-                    if (value == "delete") {
-                      await _confirmDeletePost();
-                    }
-                  },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_horiz, size: 20),
+                onSelected: (value) {
+                  if (value == "delete") {
+                    widget.onPostDeleted?.call();
+                  } else if (value == "hide") {
+                    widget.onPostHidden?.call();
+                  }
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
+                    value: "hide",
+                    child: Text("Ẩn bài viết"),
+                  ),
+                  if (currentUser?.uid == widget.post.userId)
+                    const PopupMenuItem(
                       value: "delete",
                       child: Text("Xóa bài viết", style: TextStyle(color: Colors.red)),
                     ),
-                  ],
-                ),
+                ],
+              ),
             ],
           ),
-
           const SizedBox(height: 8),
-
-          // CONTENT + Xem thêm/Thu gọn
           if (widget.post.content.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(left: 2, right: 2),
@@ -158,61 +171,72 @@ class _PostCardState extends State<PostCard> {
                 ],
               ),
             ),
-
           const SizedBox(height: 8),
-
-          // ACTIONS
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // LIKE BUTTON (kiểu Facebook)
               if (widget.showLikeButton)
-                Expanded(
-                  child: InkWell(
-                    onTap: _toggleLike,
-                    child: Row(
-                      children: [
-                        Icon(
-                          isLiked ? Icons.thumb_up : Icons.thumb_up_outlined,
+                InkWell(
+                  onTap: _toggleLike,
+                  child: Row(
+                    children: [
+                      Icon(
+                        isLiked ? Icons.thumb_up : Icons.thumb_up_outlined,
+                        color: isLiked ? const Color(0xFF1877F2) : Colors.grey,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        "Thích (${widget.post.likes.length})",
+                        style: TextStyle(
+                          fontSize: 13,
                           color: isLiked ? const Color(0xFF1877F2) : Colors.grey,
-                          size: 18,
+                          fontWeight: isLiked ? FontWeight.w600 : FontWeight.normal,
                         ),
-                        const SizedBox(width: 6),
-                        Text(
-                          "Thích (${widget.post.likes.length})",
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: isLiked ? const Color(0xFF1877F2) : Colors.grey,
-                            fontWeight: isLiked ? FontWeight.w600 : FontWeight.normal,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-
-              // COMMENT BUTTON + COUNT
               if (widget.showCommentButton)
-                Expanded(
-                  child: InkWell(
-                    onTap: _openComments,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        const Icon(Icons.chat_bubble_outline, size: 18, color: Colors.grey),
-                        const SizedBox(width: 6),
-                        const Text(
-                          "Bình luận",
-                          style: TextStyle(fontSize: 13, color: Colors.grey),
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          "(${widget.post.commentsCount})",
-                          style: const TextStyle(fontSize: 13, color: Colors.grey),
-                        ),
-                      ],
-                    ),
+                InkWell(
+                  onTap: _openComments,
+                  child: Row(
+                    children: [
+                      const Icon(Icons.chat_bubble_outline, size: 18, color: Colors.grey),
+                      const SizedBox(width: 6),
+                      const Text(
+                        "Bình luận",
+                        style: TextStyle(fontSize: 13, color: Colors.grey),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        "(${widget.post.commentsCount})",
+                        style: const TextStyle(fontSize: 13, color: Colors.grey),
+                      ),
+                    ],
                   ),
                 ),
+              InkWell(
+                onTap: _toggleSave,
+                child: Row(
+                  children: [
+                    Icon(
+                      isSaved ? Icons.bookmark : Icons.bookmark_border,
+                      color: isSaved ? const Color(0xFF1877F2) : Colors.grey,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      "Lưu",
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: isSaved ? const Color(0xFF1877F2) : Colors.grey,
+                        fontWeight: isSaved ? FontWeight.w600 : FontWeight.normal,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ],
