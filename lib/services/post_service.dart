@@ -42,6 +42,35 @@ class PostService {
     }
   }
 
+  Future<Post?> getPostById(String postId) async {
+    try {
+      final doc = await _firestore.collection(postCol).doc(postId).get();
+      if (doc.exists) {
+        return Post.fromFirestore(doc);
+      }
+      return null;
+    } catch (e) {
+      print("Error fetching post by ID: $e");
+      return null;
+    }
+  }
+
+  Future<List<Post>> getPostsFromPostIds(List<String> postIds) async {
+    if (postIds.isEmpty) {
+      return [];
+    }
+    try {
+      final querySnapshot = await _firestore
+          .collection(postCol)
+          .where(FieldPath.documentId, whereIn: postIds)
+          .get();
+      return querySnapshot.docs.map((doc) => Post.fromFirestore(doc)).toList();
+    } catch (e) {
+      print("Error fetching posts from IDs: $e");
+      return [];
+    }
+  }
+
   Future<void> toggleLike(String postId) async {
     final user = _auth.currentUser;
     if (user == null) return;

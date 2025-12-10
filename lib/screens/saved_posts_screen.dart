@@ -26,8 +26,10 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
           backgroundColor: Colors.grey[800],
         ),
       );
-      // Refresh the list of saved posts
-      setState(() {});
+      // The stream will rebuild the list automatically.
+      if (!isSaved) {
+        setState(() {}); // Trigger a rebuild to reflect the change instantly.
+      }
     }
   }
 
@@ -57,32 +59,15 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
             return const Center(child: Text('You have no saved posts.'));
           }
 
-          final savedPostDocs = snapshot.data!.docs;
+          final posts = snapshot.data!.docs.map((doc) => Post.fromFirestore(doc)).toList();
 
-          return FutureBuilder<List<Post>>(
-            future: _postService.getPostsFromPostIds(savedPostDocs.map((doc) => doc.id).toList()),
-            builder: (context, postSnapshot) {
-              if (postSnapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (postSnapshot.hasError) {
-                return Center(child: Text('Error: ${postSnapshot.error}'));
-              }
-              if (!postSnapshot.hasData || postSnapshot.data!.isEmpty) {
-                return const Center(child: Text('You have no saved posts.'));
-              }
-
-              final posts = postSnapshot.data!;
-
-              return ListView.builder(
-                itemCount: posts.length,
-                itemBuilder: (context, index) {
-                  final post = posts[index];
-                  return PostCard(
-                    post: post,
-                    onPostSaved: _onPostSaved,
-                  );
-                },
+          return ListView.builder(
+            itemCount: posts.length,
+            itemBuilder: (context, index) {
+              final post = posts[index];
+              return PostCard(
+                post: post,
+                onPostSaved: _onPostSaved,
               );
             },
           );

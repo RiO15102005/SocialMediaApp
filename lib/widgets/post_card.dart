@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import '../models/post_model.dart';
 import '../services/post_service.dart';
 import '../screens/comment_screen.dart';
+import '../screens/share_post_screen.dart';
 
 class PostCard extends StatefulWidget {
   final Post post;
@@ -93,6 +94,17 @@ class _PostCardState extends State<PostCard> {
           onPostDeleted: widget.onPostDeleted,
           onPostHidden: widget.onPostHidden,
         ),
+      ),
+    );
+  }
+
+  void _openShareSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.7,
+        child: SharePostScreen(post: widget.post),
       ),
     );
   }
@@ -227,9 +239,7 @@ class _PostCardState extends State<PostCard> {
               const SizedBox(width: 16),
               IconButton(
                 icon: const Icon(Icons.near_me_outlined, color: Colors.grey),
-                onPressed: () {
-                  // TODO: Implement send functionality.
-                },
+                onPressed: _openShareSheet,
               ),
               const Spacer(),
               IconButton(

@@ -49,6 +49,41 @@ class UserService {
       return [user.uid];
     }
   }
+  // Get the list of friends for the current user
+  Future<List<Map<String, String>>> getFriends() async {
+    final user = _auth.currentUser;
+    if (user == null) return [];
+
+    try {
+      final doc = await _firestore.collection(_userCollection).doc(user.uid).get();
+      if (!doc.exists || doc.data() == null) {
+        return [];
+      }
+
+      final data = doc.data()!;
+      final friendIds = List<String>.from(data['friends'] ?? []);
+
+      if (friendIds.isEmpty) {
+        return [];
+      }
+
+      final friendDocs = await _firestore
+          .collection(_userCollection)
+          .where(FieldPath.documentId, whereIn: friendIds)
+          .get();
+
+      return friendDocs.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'id': doc.id,
+          'name': (data['displayName'] as String?) ?? 'N/A',
+        };
+      }).toList();
+    } catch (e) {
+      return [];
+    }
+  }
+
 
   // Load user profile data
   Future<Map<String, dynamic>?> loadUserData(String uid) async {
