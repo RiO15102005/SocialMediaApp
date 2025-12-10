@@ -126,6 +126,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return Post.fromFirestore(snap);
   }
 
+  Future<bool> _doesCommentExist(String postId, String commentId) async {
+    final doc = await FirebaseFirestore.instance
+        .collection("POST")
+        .doc(postId)
+        .collection("comments")
+        .doc(commentId)
+        .get();
+    return doc.exists;
+  }
+
   Future<bool> _isRequestCancelled(String senderId) async {
     if (currentUser == null) return false;
     final q = await FirebaseFirestore.instance
@@ -142,10 +152,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Future<void> _acceptFriendRequest(String senderId, String notiId) async {
     if (currentUser == null) return;
     await FirebaseFirestore.instance.collection("users").doc(currentUser!.uid).update({
-      "friends": FieldValue.arrayUnion([senderId])
+      "friends": FieldValue.arrayUnion([senderId]),
     });
     await FirebaseFirestore.instance.collection("users").doc(senderId).update({
-      "friends": FieldValue.arrayUnion([currentUser!.uid])
+      "friends": FieldValue.arrayUnion([currentUser!.uid]),
     });
 
     await FirebaseFirestore.instance.collection("notifications").doc(notiId).update({
@@ -478,21 +488,55 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     ),
 
                     onTap: () async {
-                      if(!isRead) _markAsRead(notiId);
+                      if (!isRead) _markAsRead(notiId);
 
                       if (data["postId"] != null) {
-                        final post = await _fetchPost(data["postId"]);
-                        if (post != null && mounted) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => CommentScreen(post: post)),
-                          );
-                        } else if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text("Bài viết hoặc bình luận này đã bị xóa."),
-                            ),
-                          );
+                        final String postId = data["postId"];
+                        final type = data['type'];
+
+                        final post = await _fetchPost(postId);
+
+                        if (post == null) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text("Bài viết này đã bị xóa.")),
+                            );
+                          }
+                          return;
+                        }
+
+                        // Post exists, now check for comment-specific logic
+                        if (type == 'comment' || type == 'reply') {
+                          final commentId = data['commentId'];
+                          if (commentId == null) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text("Bình luận này đã bị xóa.")),
+                              );
+                            }
+                            return;
+                          }
+                          
+                          final commentExists = await _doesCommentExist(postId, commentId);
+                          
+                          if (commentExists && mounted) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => CommentScreen(post: post)),
+                            );
+                          } else if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text("Bình luận này đã bị xóa.")),
+                            );
+                          }
+                        } else {
+                          // For 'like', 'post', etc.
+                          if (mounted) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => CommentScreen(post: post)),
+                            );
+                          }
                         }
                       }
                     },
