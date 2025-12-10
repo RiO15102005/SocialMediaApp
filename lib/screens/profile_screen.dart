@@ -1,3 +1,5 @@
+// lib/screens/profile_screen.dart
+
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -30,8 +32,8 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
   late String _targetUserId;
   late bool _isMyProfile;
   late String _emptyPostMessage;
-  final String _emptySavedMessage = "Bạn chưa lưu bài viết nào";
-  final String _emptyRepostMessage = "Chưa có bài đăng lại ";
+  final String _emptySavedMessage = "Bạn chưa lưu bài viết nào.";
+  final String _emptyRepostMessage = "Chưa có bài viết nào được đăng lại.";
 
   File? _avatarImage;
   File? _coverImage;
@@ -47,9 +49,9 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
     _tabController = TabController(length: _isMyProfile ? 3 : 2, vsync: this);
 
     if (_isMyProfile) {
-      _emptyPostMessage = "Chưa có bài đăng lại";
+      _emptyPostMessage = "Chưa có bài viết nào để hiển thị.";
     } else {
-      _emptyPostMessage = "Chưa có bất kì bài viết nào";
+      _emptyPostMessage = "Người dùng này chưa đăng bài viết nào.";
     }
   }
 
@@ -154,13 +156,11 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                     ProfileCover(
                         coverImage: _coverImage != null ? FileImage(_coverImage!) : null,
                         isMyProfile: _isMyProfile,
-                        onPickCover: () {}
-                    ),
+                        onPickCover: () {}),
                     ProfileAvatar(
                         avatarImage: _avatarImage != null ? FileImage(_avatarImage!) : null,
                         isMyProfile: _isMyProfile,
-                        onPickAvatar: () {}
-                    ),
+                        onPickAvatar: () {}),
                     ProfileInfo(
                         displayName: userData['displayName'] ?? 'Người dùng',
                         bio: userData['bio'] ?? 'Chưa có thông tin giới thiệu',
@@ -169,8 +169,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                           if (friendsCount > 0) {
                             Navigator.push(context, MaterialPageRoute(builder: (_) => FriendsScreen(userId: _targetUserId)));
                           }
-                        }
-                    ),
+                        }),
                     const SizedBox(height: 20),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -236,13 +235,21 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
         }
 
         final docs = snapshot.data?.docs ?? [];
-        final posts = docs.map((doc) => Post.fromFirestore(doc)).where((post) => !post.isDeleted && post.content.trim().isNotEmpty).toList();
+        // Không lọc theo content.trim() để tránh vô tình loại hết bài (nếu có trường hợp content rỗng)
+        final posts = docs.map((doc) => Post.fromFirestore(doc)).where((post) => !post.isDeleted).toList();
 
         if (posts.isEmpty) {
-          return Center(child: Text(_emptyPostMessage, style: const TextStyle(fontSize: 16, color: Colors.grey)));
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Text(_emptyPostMessage, style: const TextStyle(fontSize: 16, color: Colors.grey)),
+            ),
+          );
         }
 
         return ListView.builder(
+          shrinkWrap: true,
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(8.0),
           itemCount: posts.length,
           itemBuilder: (context, index) {
@@ -267,15 +274,22 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
         }
 
         final docs = snapshot.data?.docs ?? [];
-        final posts = docs.map((doc) => Post.fromFirestore(doc)).where((post) => !post.isDeleted && post.content.trim().isNotEmpty).toList();
+        final posts = docs.map((doc) => Post.fromFirestore(doc)).where((post) => !post.isDeleted).toList();
 
         if (posts.isEmpty) {
-          return Center(child: Text(_emptySavedMessage, style: const TextStyle(fontSize: 16, color: Colors.grey)));
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Text(_emptySavedMessage, style: const TextStyle(fontSize: 16, color: Colors.grey)),
+            ),
+          );
         }
 
         posts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
         return ListView.builder(
+          shrinkWrap: true,
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(8.0),
           itemCount: posts.length,
           itemBuilder: (context, index) {
@@ -300,15 +314,22 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
         }
 
         final docs = snapshot.data?.docs ?? [];
-        final posts = docs.map((doc) => Post.fromFirestore(doc)).where((post) => !post.isDeleted && post.content.trim().isNotEmpty).toList();
+        final posts = docs.map((doc) => Post.fromFirestore(doc)).where((post) => !post.isDeleted).toList();
 
         if (posts.isEmpty) {
-          return Center(child: Text(_emptyRepostMessage, style: const TextStyle(fontSize: 16, color: Colors.grey)));
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Text(_emptyRepostMessage, style: const TextStyle(fontSize: 16, color: Colors.grey)),
+            ),
+          );
         }
 
         posts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
         return ListView.builder(
+          shrinkWrap: true,
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(8.0),
           itemCount: posts.length,
           itemBuilder: (context, index) {
