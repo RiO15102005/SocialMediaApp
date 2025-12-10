@@ -1,5 +1,3 @@
-// lib/services/chat_service.dart
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -56,6 +54,77 @@ class ChatService {
       "updatedAt": FieldValue.serverTimestamp(),
       "lastSenderId": uid,
     }, SetOptions(merge: true));
+  }
+
+  // ================= GỬI BÀI VIẾT ĐƯỢC CHIA SẺ =======================
+  Future<void> sendSharedPost({
+    required List<String> recipientIds,
+    required String postId,
+    String? message,
+  }) async {
+    final uid = _auth.currentUser!.uid;
+    final userDoc = await _firestore.collection('users').doc(uid).get();
+    final senderName = userDoc.data()?['displayName'] ?? 'Người dùng';
+
+    final postDoc = await _firestore.collection('POST').doc(postId).get();
+    if (!postDoc.exists) {
+      return;
+    }
+    final postData = postDoc.data()!;
+    final postContent = postData['content'] ?? '';
+    final originalAuthorName = postData['userName'] ?? 'Người dùng';
+
+    for (String recipientId in recipientIds) {
+      // Determine if the recipient is a group or a single user
+      final recipientDoc =
+          await _firestore.collection('chat_rooms').doc(recipientId).get();
+      final bool isGroup =
+          recipientDoc.exists && (recipientDoc.data()?['isGroup'] ?? false);
+
+      final roomId = isGroup ? recipientId : getChatRoomId(uid, recipientId);
+
+      // Add a new message with the shared post
+      final newMessage = await _firestore
+          .collection("chat_rooms")
+          .doc(roomId)
+          .collection("messages")
+          .add({
+        "senderId": uid,
+        "receiverId": isGroup ? null : recipientId,
+        "message": message,
+        "postId": postId,
+        "type": "shared_post",
+        "sharedPostContent": postContent,
+        "sharedPostUserName": originalAuthorName,
+        "timestamp": Timestamp.now(),
+        "isRead": false,
+        "likedBy": [],
+        "deletedFor": [],
+        "isRecalled": false,
+      });
+
+      // Create a notification for the recipient
+      await _firestore.collection("notifications").add({
+        "userId": recipientId,
+        "senderId": uid,
+        "senderName": senderName,
+        "postId": postId,
+        "type": "shared_post",
+        "message": message,
+        "timestamp": Timestamp.now(),
+        "isRead": false
+      });
+      
+      final lastMessageText = "Đã chia sẻ một bài viết của $originalAuthorName: \"$postContent\"";
+
+      // Update the last message and timestamp of the chat room
+      await _firestore.collection("chat_rooms").doc(roomId).set({
+        if (!isGroup) "participants": [uid, recipientId],
+        "lastMessage": message != null && message.isNotEmpty ? message : lastMessageText,
+        "updatedAt": FieldValue.serverTimestamp(),
+        "lastSenderId": uid,
+      }, SetOptions(merge: true));
+    }
   }
 
   // ================= ĐÁNH DẤU ĐÃ ĐỌC ====================
@@ -250,22 +319,24 @@ class ChatService {
   }
 
   Future<void> addMembersToGroup(String groupId, List<String> members) async {
-    await _firestore.collection("chat_rooms").doc(groupId).update({
-      "participants": FieldValue.arrayUnion(members)
-    });
+    await _firestore
+        .collection("chat_rooms")
+        .doc(groupId)
+        .update({"participants": FieldValue.arrayUnion(members)});
   }
 
-
   Future<void> removeMemberFromGroup(String groupId, String uid) async {
-    await _firestore.collection("chat_rooms").doc(groupId).update({
-      "participants": FieldValue.arrayRemove([uid])
-    });
+    await _firestore
+        .collection("chat_rooms")
+        .doc(groupId)
+        .update({"participants": FieldValue.arrayRemove([uid])});
   }
 
   Future<void> leaveGroup(String groupId) async {
     final uid = _auth.currentUser!.uid;
-    await _firestore.collection("chat_rooms").doc(groupId).update({
-      "participants": FieldValue.arrayRemove([uid])
-    });
+    await _firestore
+        .collection("chat_rooms")
+        .doc(groupId)
+        .update({"participants": FieldValue.arrayRemove([uid])});
   }
 }

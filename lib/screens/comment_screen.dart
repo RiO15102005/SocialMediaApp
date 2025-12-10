@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -10,9 +11,17 @@ import '../widgets/post_card.dart';
 
 class CommentScreen extends StatefulWidget {
   final Post post;
-  final String source; // "home" hoặc "profile"
+  final String source;
+  final VoidCallback? onPostDeleted;
+  final VoidCallback? onPostHidden;
 
-  const CommentScreen({super.key, required this.post, this.source = "home"});
+  const CommentScreen({
+    super.key,
+    required this.post,
+    this.source = "home",
+    this.onPostDeleted,
+    this.onPostHidden,
+  });
 
   @override
   State<CommentScreen> createState() => _CommentScreenState();
@@ -28,11 +37,14 @@ class _CommentScreenState extends State<CommentScreen> {
 
   bool _isLoadingName = true;
   String _currentUserName = "Bạn";
+  final String _emptyMessage = "Nơi đây thật yên tĩnh... Hãy phá vỡ sự im lặng nào!";
 
   String? _replyingId;
   String? _replyingName;
 
   final Set<String> _expanded = {};
+
+  bool _isPostActionPending = false;
 
   @override
   void initState() {
@@ -48,6 +60,42 @@ class _CommentScreenState extends State<CommentScreen> {
       _currentUserName = data?["displayName"] ?? currentUser!.email!.split("@")[0];
       _isLoadingName = false;
     });
+  }
+
+  Future<void> _refresh() async {
+    setState(() {});
+  }
+
+  void _onPostSaved(bool isSaved) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).removeCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isSaved ? "Đã lưu bài viết" : "Đã bỏ lưu bài viết"),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  void _handlePostDeleted() {
+    widget.onPostDeleted?.call();
+    setState(() {
+      _isPostActionPending = true;
+    });
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+    }
+  }
+
+  void _handlePostHidden() {
+    widget.onPostHidden?.call();
+    setState(() {
+      _isPostActionPending = true;
+    });
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+    }
   }
 
   Future<void> _sendComment() async {
@@ -116,98 +164,114 @@ class _CommentScreenState extends State<CommentScreen> {
       body: Column(
         children: [
           Expanded(
-            child: StreamBuilder<QuerySnapshot>(
-              stream: _postService.getCommentsStream(widget.post.postId),
-              builder: (context, snap) {
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (!snap.hasData) {
-                  return const Center(child: Text("Không có dữ liệu bình luận."));
-                }
-
-                final allDocs = snap.data!.docs;
-                final allComments = allDocs.map((e) => Comment.fromFirestore(e)).toList();
-
-                final parents = allComments.where((c) => c.parentId == null).toList()
-                  ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
-
-                final repliesMap = <String, List<Comment>>{};
-                for (final c in allComments.where((c) => c.parentId != null)) {
-                  repliesMap.putIfAbsent(c.parentId!, () => []).add(c);
-                }
-
-                return CustomScrollView(
-                  slivers: [
-                    SliverToBoxAdapter(
-                      child: Column(
-                        children: [
+            child: RefreshIndicator(
+              onRefresh: _refresh,
+              child: CustomScrollView(
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: Column(
+                      children: [
+                        if (!_isPostActionPending)
                           Container(
                             color: Colors.white,
                             padding: const EdgeInsets.all(8),
                             child: PostCard(
                               post: widget.post,
-                              showCommentButton: true, // hiển thị cả like và bình luận
+                              showCommentButton: false,
                               showLikeButton: true,
                               source: widget.source,
+                              onPostDeleted: _handlePostDeleted,
+                              onPostHidden: _handlePostHidden,
+                              onPostSaved: _onPostSaved,
                             ),
                           ),
-                          Container(height: 8, width: double.infinity, color: const Color(0xFFF0F2F5)),
-                        ],
-                      ),
+                        Container(height: 8, width: double.infinity, color: const Color(0xFFF0F2F5)),
+                      ],
                     ),
-                    SliverList(
-                      delegate: SliverChildBuilderDelegate(
-                            (context, i) {
-                          final parent = parents[i];
-                          final replies = repliesMap[parent.commentId] ?? [];
-                          final expanded = _expanded.contains(parent.commentId);
+                  ),
+                  StreamBuilder<QuerySnapshot>(
+                    stream: _postService.getCommentsStream(widget.post.postId),
+                    builder: (context, snap) {
+                      if (snap.connectionState == ConnectionState.waiting) {
+                        return const SliverToBoxAdapter(
+                          child: Center(child: CircularProgressIndicator()),
+                        );
+                      }
+                      if (!snap.hasData || snap.data!.docs.isEmpty) {
+                        return SliverFillRemaining(
+                          child: Center(
+                            child: Text(
+                              _emptyMessage,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 18, color: Colors.grey),
+                            ),
+                          ),
+                        );
+                      }
 
-                          final bool canDeleteParent =
-                              (currentUser != null) &&
-                                  (currentUser!.uid == postOwner || currentUser!.uid == parent.userId);
+                      final allDocs = snap.data!.docs;
+                      final allComments = allDocs.map((e) => Comment.fromFirestore(e)).toList();
 
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              cmt.CommentItem(
-                                comment: parent,
-                                replyCount: replies.length,
-                                showReplies: expanded,
-                                canDelete: canDeleteParent,
-                                onReply: _replyTo,
-                                onToggleReplies: _toggle,
-                                onDelete: _delete,
-                                onLike: _likeComment,
-                              ),
-                              if (expanded)
-                                ...replies.map((r) {
-                                  final bool canDeleteReply =
-                                      (currentUser != null) &&
-                                          (currentUser!.uid == postOwner || currentUser!.uid == r.userId);
+                      final parents = allComments.where((c) => c.parentId == null).toList()
+                        ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
-                                  return Padding(
-                                    padding: const EdgeInsets.only(left: 32),
-                                    child: cmt.CommentItem(
-                                      comment: r,
-                                      replyCount: 0,
-                                      showReplies: false,
-                                      canDelete: canDeleteReply,
-                                      onReply: _replyTo,
-                                      onDelete: _delete,
-                                      onLike: _likeComment,
-                                    ),
-                                  );
-                                }),
-                            ],
-                          );
-                        },
-                        childCount: parents.length,
-                      ),
-                    ),
-                  ],
-                );
-              },
+                      final repliesMap = <String, List<Comment>>{};
+                      for (final c in allComments.where((c) => c.parentId != null)) {
+                        repliesMap.putIfAbsent(c.parentId!, () => []).add(c);
+                      }
+
+                      return SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, i) {
+                            final parent = parents[i];
+                            final replies = repliesMap[parent.commentId] ?? [];
+                            final expanded = _expanded.contains(parent.commentId);
+
+                            final bool canDeleteParent =
+                                (currentUser != null) &&
+                                    (currentUser!.uid == postOwner || currentUser!.uid == parent.userId);
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                cmt.CommentItem(
+                                  comment: parent,
+                                  replyCount: replies.length,
+                                  showReplies: expanded,
+                                  canDelete: canDeleteParent,
+                                  onReply: _replyTo,
+                                  onToggleReplies: _toggle,
+                                  onDelete: _delete,
+                                  onLike: _likeComment,
+                                ),
+                                if (expanded)
+                                  ...replies.map((r) {
+                                    final bool canDeleteReply = (currentUser != null) &&
+                                        (currentUser!.uid == postOwner || currentUser!.uid == r.userId);
+
+                                    return Padding(
+                                      padding: const EdgeInsets.only(left: 32),
+                                      child: cmt.CommentItem(
+                                        comment: r,
+                                        replyCount: 0,
+                                        showReplies: false,
+                                        canDelete: canDeleteReply,
+                                        onReply: _replyTo,
+                                        onDelete: _delete,
+                                        onLike: _likeComment,
+                                      ),
+                                    );
+                                  }),
+                              ],
+                            );
+                          },
+                          childCount: parents.length,
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
           if (!_isLoadingName) _inputBox(),

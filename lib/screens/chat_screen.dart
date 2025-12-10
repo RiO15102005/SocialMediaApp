@@ -1,11 +1,10 @@
-// lib/screens/chat_screen.dart
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../services/chat_service.dart';
 import '../widgets/chat_bubble.dart';
 import 'group_info_screen.dart';
+import 'post_detail_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final String receiverId;
@@ -187,21 +186,48 @@ class _ChatScreenState extends State<ChatScreen> {
                     final likedBy = (data["likedBy"] is List) ? List<String>.from(data["likedBy"]) : <String>[];
                     final isRevoked = data["isRecalled"] == true;
                     final isMe = data["senderId"] == uid;
+                    final isSharedPost = data['type'] == 'shared_post';
 
-                    return ChatBubble(
-                      message: data["message"] ?? "",
-                      isCurrentUser: isMe,
-                      timestamp: data["timestamp"] ?? Timestamp.now(),
-                      showStatus: false,
-                      likedBy: likedBy,
-                      isLiked: likedBy.contains(uid),
-                      onLikePressed: () {
-                        if (!isRevoked) _chatService.toggleLikeMessage(chatRoomId, doc.id);
-                      },
-                      isRevoked: isRevoked,
-                      onRecall: isMe && !isRevoked ? () => _confirmRecall(doc.id) : null,
-                      onDeleteForMe: () => _confirmDeleteForMe(doc.id),
-                    );
+                    if (isSharedPost) {
+                      return ChatBubble.sharedPost(
+                        isCurrentUser: isMe,
+                        timestamp: data["timestamp"] ?? Timestamp.now(),
+                        showStatus: false,
+                        likedBy: likedBy,
+                        isLiked: likedBy.contains(uid),
+                        onLikePressed: () {
+                          if (!isRevoked) _chatService.toggleLikeMessage(chatRoomId, doc.id);
+                        },
+                        isRevoked: isRevoked,
+                        onRecall: isMe && !isRevoked ? () => _confirmRecall(doc.id) : null,
+                        onDeleteForMe: () => _confirmDeleteForMe(doc.id),
+                        sharedPostContent: data['sharedPostContent'],
+                        sharedPostUserName: data['sharedPostUserName'],
+                        onSharedPostTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => PostDetailScreen(postId: data['postId']),
+                            ),
+                          );
+                        },
+                      );
+                    } else {
+                      return ChatBubble(
+                        message: data["message"] ?? "",
+                        isCurrentUser: isMe,
+                        timestamp: data["timestamp"] ?? Timestamp.now(),
+                        showStatus: false,
+                        likedBy: likedBy,
+                        isLiked: likedBy.contains(uid),
+                        onLikePressed: () {
+                          if (!isRevoked) _chatService.toggleLikeMessage(chatRoomId, doc.id);
+                        },
+                        isRevoked: isRevoked,
+                        onRecall: isMe && !isRevoked ? () => _confirmRecall(doc.id) : null,
+                        onDeleteForMe: () => _confirmDeleteForMe(doc.id),
+                      );
+                    }
                   },
                 );
               },

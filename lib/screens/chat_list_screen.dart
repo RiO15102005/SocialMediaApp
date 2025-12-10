@@ -35,6 +35,17 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
         if (data["isRecalled"] == true) {
           result = "Tin nhắn đã được thu hồi •";
+        } else if (data['type'] == 'shared_post') {
+          final content = data['sharedPostContent'] as String?;
+          final userName = data['sharedPostUserName'] as String?;
+          final customMessage = data['message'] as String?;
+
+          if (customMessage != null && customMessage.isNotEmpty) {
+            result = customMessage;
+          } else {
+            result =
+                'Đã chia sẻ một bài viết của ${userName ?? 'Người dùng'}: "${content ?? ''}"';
+          }
         } else {
           result = data["message"] ?? "";
         }
