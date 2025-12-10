@@ -7,6 +7,7 @@ import '../screens/likes_screen.dart';
 import '../services/post_service.dart';
 import '../screens/comment_screen.dart';
 import '../screens/share_post_screen.dart';
+import '../screens/profile_screen.dart';
 
 class PostCard extends StatefulWidget {
   final Post post;
@@ -36,6 +37,15 @@ class _PostCardState extends State<PostCard> {
   final PostService _postService = PostService();
   final User? currentUser = FirebaseAuth.instance.currentUser;
   bool _expanded = false;
+
+  void _navigateToProfile() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ProfileScreen(userId: widget.post.userId),
+      ),
+    );
+  }
 
   Future<void> _toggleLike() async {
     if (currentUser == null) return;
@@ -172,14 +182,20 @@ class _PostCardState extends State<PostCard> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const CircleAvatar(radius: 20, child: Icon(Icons.person, size: 18)),
+              GestureDetector(
+                onTap: _navigateToProfile,
+                child: const CircleAvatar(radius: 20, child: Icon(Icons.person, size: 18)),
+              ),
               const SizedBox(width: 8),
               Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(widget.post.userName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                  const SizedBox(height: 2),
-                  Text(timeStr, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                ]),
+                child: GestureDetector(
+                  onTap: _navigateToProfile,
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(widget.post.userName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                    const SizedBox(height: 2),
+                    Text(timeStr, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  ]),
+                ),
               ),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_horiz, size: 20),

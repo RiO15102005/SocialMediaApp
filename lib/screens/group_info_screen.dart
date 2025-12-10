@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../services/chat_service.dart';
 import 'add_member_screen.dart';
+import 'profile_screen.dart';
 
 class GroupInfoScreen extends StatefulWidget {
   final String groupId;
@@ -23,6 +24,15 @@ class GroupInfoScreen extends StatefulWidget {
 class _GroupInfoScreenState extends State<GroupInfoScreen> {
   final ChatService _chatService = ChatService();
   final currentUser = FirebaseAuth.instance.currentUser!;
+
+  void _navigateToProfile(BuildContext context, String userId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ProfileScreen(userId: userId),
+      ),
+    );
+  }
 
   // Xóa thành viên (Chỉ Admin)
   void _kickMember(String memberId, String memberName) {
@@ -187,6 +197,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                         final bool isMemberAdmin = (memberId == adminId);
 
                         return ListTile(
+                          onTap: () => _navigateToProfile(context, memberId),
                           leading: CircleAvatar(
                             backgroundImage: (avatar != null && avatar.isNotEmpty) ? NetworkImage(avatar) : null,
                             child: (avatar == null || avatar.isEmpty) ? const Icon(Icons.person) : null,

@@ -1,10 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'profile_screen.dart';
 
 class LikesScreen extends StatelessWidget {
   final List<String> userIds;
 
   const LikesScreen({Key? key, required this.userIds}) : super(key: key);
+
+  void _navigateToProfile(BuildContext context, String userId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ProfileScreen(userId: userId),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,6 +47,7 @@ class LikesScreen extends StatelessWidget {
               final userAvatar = userData['photoURL'];
 
               return ListTile(
+                onTap: () => _navigateToProfile(context, userId),
                 leading: CircleAvatar(
                   backgroundImage: userAvatar != null ? NetworkImage(userAvatar) : null,
                   child: userAvatar == null ? const Icon(Icons.person) : null,

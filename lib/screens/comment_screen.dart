@@ -37,7 +37,7 @@ class _CommentScreenState extends State<CommentScreen> {
 
   bool _isLoadingName = true;
   String _currentUserName = "Bạn";
-  final String _emptyMessage = "Nơi đây thật yên tĩnh... Hãy phá vỡ sự im lặng nào!";
+  final String _emptyMessage = "Chưa có bình luận nào... Hãy là người đầu tiên phá vỡ sự im lặng!";
 
   String? _replyingId;
   String? _replyingName;
@@ -230,6 +230,7 @@ class _CommentScreenState extends State<CommentScreen> {
                             final bool canDeleteParent =
                                 (currentUser != null) &&
                                     (currentUser!.uid == postOwner || currentUser!.uid == parent.userId);
+                            final bool isPostAuthor = parent.userId == postOwner;
 
                             return Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -239,6 +240,7 @@ class _CommentScreenState extends State<CommentScreen> {
                                   replyCount: replies.length,
                                   showReplies: expanded,
                                   canDelete: canDeleteParent,
+                                  isPostAuthor: isPostAuthor,
                                   onReply: _replyTo,
                                   onToggleReplies: _toggle,
                                   onDelete: _delete,
@@ -248,6 +250,7 @@ class _CommentScreenState extends State<CommentScreen> {
                                   ...replies.map((r) {
                                     final bool canDeleteReply = (currentUser != null) &&
                                         (currentUser!.uid == postOwner || currentUser!.uid == r.userId);
+                                    final bool isReplyPostAuthor = r.userId == postOwner;
 
                                     return Padding(
                                       padding: const EdgeInsets.only(left: 32),
@@ -256,6 +259,7 @@ class _CommentScreenState extends State<CommentScreen> {
                                         replyCount: 0,
                                         showReplies: false,
                                         canDelete: canDeleteReply,
+                                        isPostAuthor: isReplyPostAuthor,
                                         onReply: _replyTo,
                                         onDelete: _delete,
                                         onLike: _likeComment,
@@ -295,7 +299,7 @@ class _CommentScreenState extends State<CommentScreen> {
               Row(
                 children: [
                   Expanded(
-                    child: Text("Trả lời $_replyingName", style: const TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)),
+                    child: Text("Đang trả lời $_replyingName", style: const TextStyle(color: Colors.grey, fontStyle: FontStyle.italic)),
                   ),
                   IconButton(
                     onPressed: () {

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/post_model.dart';
+import '../models/user_model.dart' as model;
 
 class UserService {
   final _firestore = FirebaseFirestore.instance;
@@ -26,6 +27,26 @@ class UserService {
       });
     }
   }
+
+    Future<List<model.User>> getUsers(List<String> userIds) async {
+    if (userIds.isEmpty) return [];
+
+    final querySnapshot = await _firestore
+        .collection(_userCollection)
+        .where(FieldPath.documentId, whereIn: userIds)
+        .get();
+
+    return querySnapshot.docs.map((doc) {
+      final data = doc.data();
+      return model.User(
+        uid: doc.id,
+        email: data['email'] ?? '',
+        displayName: data['displayName'] ?? 'Unknown User',
+        photoURL: data['photoURL'] ?? '',
+      );
+    }).toList();
+  }
+
 
   // Get the list of friends for the news feed
   Future<List<String>> getCurrentUserFriendsList() async {

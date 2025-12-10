@@ -5,6 +5,7 @@ import '../services/chat_service.dart';
 import '../widgets/chat_bubble.dart';
 import 'group_info_screen.dart';
 import 'post_detail_screen.dart';
+import 'profile_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final String receiverId;
@@ -40,6 +41,17 @@ class _ChatScreenState extends State<ChatScreen> {
         .set({
       "lastReadTime": {uid: FieldValue.serverTimestamp()}
     }, SetOptions(merge: true));
+  }
+
+  void _navigateToProfile() {
+    if (!widget.isGroup) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ProfileScreen(userId: widget.receiverId),
+        ),
+      );
+    }
   }
 
   @override
@@ -131,19 +143,22 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF1877F2),
         foregroundColor: Colors.white,
-        title: Row(
-          children: [
-            CircleAvatar(
-              backgroundImage: (widget.receiverAvatar != null && widget.receiverAvatar!.isNotEmpty)
-                  ? NetworkImage(widget.receiverAvatar!)
-                  : null,
-              child: (widget.receiverAvatar == null || widget.receiverAvatar!.isEmpty)
-                  ? Icon(widget.isGroup ? Icons.groups : Icons.person)
-                  : null,
-            ),
-            const SizedBox(width: 10),
-            Text(widget.receiverName, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-          ],
+        title: GestureDetector(
+          onTap: _navigateToProfile,
+          child: Row(
+            children: [
+              CircleAvatar(
+                backgroundImage: (widget.receiverAvatar != null && widget.receiverAvatar!.isNotEmpty)
+                    ? NetworkImage(widget.receiverAvatar!)
+                    : null,
+                child: (widget.receiverAvatar == null || widget.receiverAvatar!.isEmpty)
+                    ? Icon(widget.isGroup ? Icons.groups : Icons.person)
+                    : null,
+              ),
+              const SizedBox(width: 10),
+              Text(widget.receiverName, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+            ],
+          ),
         ),
         actions: [
           if (widget.isGroup)

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:timeago/timeago.dart' as timeago;
 import 'firebase_options.dart';
 import 'auth_gate.dart';
 
@@ -8,6 +9,8 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  timeago.setLocaleMessages('vi', timeago.ViMessages());
+  timeago.setDefaultLocale('vi');
   runApp(const MyApp());
 }
 

@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:zalo_app/screens/chat_screen.dart';
 import 'package:zalo_app/screens/create_group_screen.dart';
+import 'package:zalo_app/screens/profile_screen.dart';
 import '../services/chat_service.dart';
 
 class ChatListScreen extends StatefulWidget {
@@ -21,6 +22,15 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   final String uid = FirebaseAuth.instance.currentUser!.uid;
   String _search = "";
+
+  void _navigateToProfile(BuildContext context, String userId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ProfileScreen(userId: userId),
+      ),
+    );
+  }
 
   // For last message per room, we create a stream that listens to messages collection and emits latest visible message
   Stream<String> lastVisibleMessageStream(String roomId) {
@@ -163,11 +173,17 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     final avatar = user["photoURL"];
 
                     return ListTile(
-                      leading: CircleAvatar(
-                        backgroundImage: (avatar != null && avatar.isNotEmpty) ? NetworkImage(avatar) : null,
-                        child: (avatar == null || avatar.isEmpty) ? const Icon(Icons.person) : null,
+                      leading: GestureDetector(
+                        onTap: () => _navigateToProfile(context, otherId),
+                        child: CircleAvatar(
+                          backgroundImage: (avatar != null && avatar.isNotEmpty) ? NetworkImage(avatar) : null,
+                          child: (avatar == null || avatar.isEmpty) ? const Icon(Icons.person) : null,
+                        ),
                       ),
-                      title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      title: GestureDetector(
+                        onTap: () => _navigateToProfile(context, otherId),
+                        child: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      ),
                       subtitle: Text(
                         lastMsg.isEmpty ? "Tin nhắn đã bị xóa" : lastMsg,
                         maxLines: 1,
