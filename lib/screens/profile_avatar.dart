@@ -2,13 +2,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 class ProfileAvatar extends StatelessWidget {
-  final ImageProvider? avatarImage;
+  final ImageProvider<Object>? avatarImage;
   final bool isMyProfile;
   final VoidCallback? onPickAvatar;
 
   const ProfileAvatar({
     super.key,
-    this.avatarImage,
+    required this.avatarImage,
     required this.isMyProfile,
     this.onPickAvatar,
   });
@@ -16,29 +16,32 @@ class ProfileAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Transform.translate(
-      offset: const Offset(0, -30),
+      offset: const Offset(0, -35),
       child: Stack(
         alignment: Alignment.bottomRight,
         children: [
           CircleAvatar(
-            radius: 55,
+            radius: 60,
             backgroundColor: Colors.white,
             child: CircleAvatar(
-              radius: 50,
+              radius: 55,
               backgroundImage: avatarImage,
-              child: avatarImage == null ? const Icon(Icons.person, size: 50) : null,
+              child: avatarImage == null
+                  ? const Icon(Icons.person, size: 55)
+                  : null,
             ),
           ),
+
           if (isMyProfile)
             Positioned(
               bottom: 4,
               right: 4,
               child: CircleAvatar(
-                radius: 18,
+                radius: 20,
                 backgroundColor: const Color(0xFF1877F2),
                 child: IconButton(
-                  padding: EdgeInsets.zero,
                   icon: const Icon(Icons.camera_alt, size: 18, color: Colors.white),
+                  padding: EdgeInsets.zero,
                   onPressed: onPickAvatar,
                 ),
               ),
