@@ -14,20 +14,21 @@ import 'chat_screen.dart';
 import '../services/chat_service.dart';
 
 class MainLayoutScreen extends StatefulWidget {
-  const MainLayoutScreen({super.key});
+  final int initialIndex; // ⭐ THÊM
+  const MainLayoutScreen({super.key, this.initialIndex = 0});
 
   @override
   State<MainLayoutScreen> createState() => _MainLayoutScreenState();
 }
 
 class _MainLayoutScreenState extends State<MainLayoutScreen> {
-  int _selectedIndex = 0;
+  late int _selectedIndex; // ⭐ ĐỔI int → late int
+
   final currentUser = FirebaseAuth.instance.currentUser;
 
   StreamSubscription<QuerySnapshot>? _chatNotificationSubscription;
   final ChatService _chatService = ChatService();
 
-  // ⭐ NEW: To track the timestamp of the last notified message for each room.
   final Map<String, Timestamp> _lastMessageTimestamps = {};
 
   static const List<Widget> _widgetOptions = <Widget>[
@@ -35,12 +36,15 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
     ChatListScreen(),
     SearchScreen(),
     NotificationsScreen(),
-    ProfileScreen(),
+    ProfileScreen(), // ⭐ TAB PROFILE = 4
   ];
 
   @override
   void initState() {
     super.initState();
+
+    _selectedIndex = widget.initialIndex; // ⭐ CHỌN TAB BAN ĐẦU
+
     _listenForNewChatMessages();
   }
 
@@ -74,7 +78,8 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
       if (lastReadTime != null) {
         messagesQuery = messagesQuery.where('timestamp', isGreaterThan: lastReadTime);
         final messagesSnapshot = await messagesQuery.get();
-        final unreadCount = messagesSnapshot.docs.where((doc) => doc.data()['senderId'] != currentUserId).length;
+        final unreadCount =
+            messagesSnapshot.docs.where((doc) => doc.data()['senderId'] != currentUserId).length;
         return unreadCount;
       } else {
         messagesQuery = messagesQuery.where('senderId', isNotEqualTo: currentUserId);
@@ -87,7 +92,6 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
     }
   }
 
-  // Logic để lắng nghe tin nhắn mới (cho pop-up)
   void _listenForNewChatMessages() {
     if (currentUser == null) return;
 
@@ -99,29 +103,30 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
           final data = docChange.doc.data() as Map<String, dynamic>;
           final roomId = docChange.doc.id;
 
-          // ⭐ FIXED: This block prevents the pop-up from re-appearing after reading.
           final Timestamp? newTimestamp = data['updatedAt'] as Timestamp?;
           final Timestamp? lastKnownTimestamp = _lastMessageTimestamps[roomId];
 
-          // Only proceed if the message timestamp is genuinely newer than the last one we notified for.
-          if (newTimestamp != null && (lastKnownTimestamp == null || newTimestamp.compareTo(lastKnownTimestamp) > 0)) {
+          if (newTimestamp != null &&
+              (lastKnownTimestamp == null || newTimestamp.compareTo(lastKnownTimestamp) > 0)) {
             final lastSenderId = data['lastSenderId'];
 
             if (lastSenderId != null && lastSenderId != currentUser!.uid) {
-              // This is a new message from someone else. Update our tracker.
               _lastMessageTimestamps[roomId] = newTimestamp;
 
               if (_selectedIndex != 1) {
                 final List<dynamic> participants = data['participants'] ?? [];
                 if (participants.length < 2) continue;
 
-                final String otherUserId = participants.firstWhere((id) => id != currentUser!.uid, orElse: () => '');
+                final String otherUserId =
+                participants.firstWhere((id) => id != currentUser!.uid, orElse: () => '');
                 if (otherUserId.isEmpty) continue;
 
                 FirebaseFirestore.instance.collection('users').doc(otherUserId).get().then((userDoc) {
                   if (!mounted) return;
+
                   final otherUserName = userDoc.data()?['displayName'] ?? "Người dùng";
                   final lastMessageContent = data['lastMessage'] ?? "Tin nhắn mới";
+
                   final String formattedTime = _formatTime(newTimestamp);
 
                   final screenHeight = MediaQuery.of(context).size.height;
@@ -144,40 +149,34 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
                           );
                         },
                         child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    "💬 $otherUserName: $lastMessageContent",
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.normal),
-                                  ),
+                                  Text("💬 $otherUserName: $lastMessageContent",
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(color: Colors.white)),
                                   const SizedBox(height: 4),
                                   Text(
                                     formattedTime,
                                     style: TextStyle(
-                                      color: Colors.white.withOpacity(0.8),
-                                      fontSize: 12,
-                                      fontStyle: FontStyle.italic,
-                                    ),
+                                        color: Colors.white.withOpacity(0.8),
+                                        fontSize: 12,
+                                        fontStyle: FontStyle.italic),
                                   ),
                                 ],
                               ),
                             ),
                             const Padding(
                               padding: EdgeInsets.only(left: 10),
-                              child: Text(
-                                'XEM',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  decoration: TextDecoration.underline,
-                                ),
-                              ),
+                              child: Text('XEM',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    decoration: TextDecoration.underline,
+                                  )),
                             ),
                           ],
                         ),
@@ -213,103 +212,12 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
       ),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
-        items: [
-          const BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Bảng tin'),
-          BottomNavigationBarItem(
-            icon: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                const Icon(Icons.chat),
-                if (currentUser != null)
-                  StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance
-                        .collection('chat_rooms')
-                        .where('participants', arrayContains: currentUser!.uid)
-                        .snapshots(),
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData || snapshot.data!.docs.isEmpty) return const SizedBox();
-                      final futures = snapshot.data!.docs.map((doc) {
-                        return _calculateUnreadMessagesInRoom(doc.id, currentUser!.uid);
-                      }).toList();
-                      return FutureBuilder<List<int>>(
-                          future: Future.wait(futures),
-                          builder: (context, unreadSnapshot) {
-                            if (!unreadSnapshot.hasData || unreadSnapshot.connectionState == ConnectionState.waiting) return const SizedBox();
-                            final totalUnreadCount = unreadSnapshot.data?.fold(0, (sum, count) => sum + count) ?? 0;
-                            if (totalUnreadCount == 0) return const SizedBox();
-                            return Positioned(
-                              right: -2,
-                              top: -2,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.red,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-                                child: Text(
-                                  '$totalUnreadCount',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                            );
-                          });
-                    },
-                  ),
-              ],
-            ),
-            label: 'Nhắn tin',
-          ),
-          const BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Tìm kiếm'),
-          BottomNavigationBarItem(
-            icon: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                const Icon(Icons.notifications),
-                if (currentUser != null)
-                  StreamBuilder<QuerySnapshot>(
-                    stream: FirebaseFirestore.instance
-                        .collection("notifications")
-                        .where("userId", isEqualTo: currentUser!.uid)
-                        .where("isRead", isEqualTo: false)
-                        .snapshots(),
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData) return const SizedBox();
-                      final count = snapshot.data!.docs.length;
-                      if (count == 0) return const SizedBox();
-                      return Positioned(
-                        right: -2,
-                        top: -2,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-                          child: Text(
-                            '$count',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-              ],
-            ),
-            label: 'Thông báo',
-          ),
-          const BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Cá nhân'),
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Bảng tin'),
+          BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Nhắn tin'),
+          BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Tìm kiếm'),
+          BottomNavigationBarItem(icon: Icon(Icons.notifications), label: 'Thông báo'),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Cá nhân'),
         ],
         currentIndex: _selectedIndex,
         selectedItemColor: Theme.of(context).primaryColor,

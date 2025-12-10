@@ -120,7 +120,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 16),
                   const Text(
-                    'Zalo App',
+                    'Joinly',
                     style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
