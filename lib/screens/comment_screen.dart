@@ -46,19 +46,22 @@ class _CommentScreenState extends State<CommentScreen> {
 
   bool _isPostActionPending = false;
 
+  // For optimistic UI updates
+  List<Comment> _comments = [];
+  final Set<String> _deletedComments = {};
+
   @override
   void initState() {
     super.initState();
     _loadUserName();
   }
-  
+
   @override
   void dispose() {
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
   }
-
 
   Future<void> _loadUserName() async {
     if (currentUser == null) return;
@@ -71,7 +74,9 @@ class _CommentScreenState extends State<CommentScreen> {
   }
 
   Future<void> _refresh() async {
-    setState(() {});
+    setState(() {
+      // This will trigger the StreamBuilder to fetch the latest comments
+    });
   }
 
   void _onPostSaved(bool isSaved) {
@@ -153,18 +158,27 @@ class _CommentScreenState extends State<CommentScreen> {
   Future<void> _deleteComment(String commentId) async {
     if (!mounted) return;
 
+    // Optimistic deletion
+    setState(() {
+      _deletedComments.add(commentId);
+    });
+
+    ScaffoldMessenger.of(context).removeCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Đã xóa bình luận"),
+        duration: Duration(seconds: 2),
+      ),
+    );
+
     try {
       await _postService.deleteComment(widget.post.postId, commentId);
-      if (mounted) {
-        ScaffoldMessenger.of(context).removeCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Đã xóa bình luận"),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
     } catch (e) {
+      // Revert if deletion fails
+      setState(() {
+        _deletedComments.remove(commentId);
+      });
+
       if (mounted) {
         ScaffoldMessenger.of(context).removeCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
@@ -240,14 +254,15 @@ class _CommentScreenState extends State<CommentScreen> {
                         );
                       }
 
-                      final allDocs = snap.data!.docs;
-                      final allComments = allDocs.map((e) => Comment.fromFirestore(e)).toList();
+                      // Filter out optimistically deleted comments
+                      final allDocs = snap.data!.docs.where((doc) => !_deletedComments.contains(doc.id)).toList();
+                      _comments = allDocs.map((e) => Comment.fromFirestore(e)).toList();
 
-                      final parents = allComments.where((c) => c.parentId == null).toList()
+                      final parents = _comments.where((c) => c.parentId == null).toList()
                         ..sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
                       final repliesMap = <String, List<Comment>>{};
-                      for (final c in allComments.where((c) => c.parentId != null)) {
+                      for (final c in _comments.where((c) => c.parentId != null)) {
                         repliesMap.putIfAbsent(c.parentId!, () => []).add(c);
                       }
 
@@ -282,7 +297,7 @@ class _CommentScreenState extends State<CommentScreen> {
                                     final bool canDeleteReply = (currentUser != null) &&
                                         (currentUser!.uid == postOwner || currentUser!.uid == r.userId);
                                     final bool isReplyPostAuthor = r.userId == postOwner;
-                                    
+
                                     return Padding(
                                       padding: const EdgeInsets.only(left: 32),
                                       child: cmt.CommentItem(

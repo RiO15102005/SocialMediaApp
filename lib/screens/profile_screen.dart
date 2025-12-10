@@ -43,6 +43,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
   final Map<String, String> _pendingActions = {}; // postId -> 'hide' or 'delete'
   final Map<String, Timer> _pendingTimers = {};
   final Set<String> _sessionHiddenPosts = {};
+  List<Post> allPosts = [];
 
   @override
   void initState() {
@@ -62,30 +63,58 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
   @override
   void dispose() {
     _tabController.dispose();
-    for (var timer in _pendingTimers.values) {
-      timer.cancel();
-    }
+    _clearPendingActions(commit: true);
     super.dispose();
   }
 
-  void _clearPendingActions() {
-    for (var timer in _pendingTimers.values) {
-      timer.cancel();
+  void _clearPendingActions({bool commit = false}) {
+    if (commit) {
+      _pendingTimers.forEach((postId, timer) {
+        timer.cancel();
+        final action = _pendingActions[postId];
+        if (action != null) {
+          if (action == 'delete') {
+            _postService.deletePost(postId);
+          } else if (action == 'hide') {
+            _sessionHiddenPosts.add(postId);
+          }
+        }
+      });
+    } else {
+      for (var timer in _pendingTimers.values) {
+        timer.cancel();
+      }
     }
+    
+    _pendingTimers.clear();
     if (mounted) {
-      _pendingTimers.clear();
       setState(() {
         _pendingActions.clear();
       });
     }
   }
 
+  void _commitAction(String postId, String action) {
+    if (action == 'delete') {
+      _postService.deletePost(postId);
+    } else if (action == 'hide') {
+      _sessionHiddenPosts.add(postId);
+    }
+    if(mounted){
+      setState(() {
+        _pendingActions.remove(postId);
+        _pendingTimers.remove(postId);
+      });
+    }
+  }
+
   Future<void> _refresh() async {
-    _clearPendingActions();
+    _clearPendingActions(commit: true);
     if (mounted) {
       setState(() {
         // This will trigger the stream builders to rebuild
       });
+      await Future.delayed(const Duration(milliseconds: 500));
     }
   }
 
@@ -100,14 +129,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
 
     final timer = Timer(const Duration(seconds: 5), () {
       if (_pendingActions.containsKey(postId)) {
-        if (action == 'delete') {
-          _postService.deletePost(postId);
-        } else if (action == 'hide') {
-          _sessionHiddenPosts.add(postId);
-        }
-        _pendingActions.remove(postId);
-        _pendingTimers.remove(postId);
-        setState(() {});
+        _commitAction(postId, action);
       }
     });
 
@@ -315,26 +337,30 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
           return const Center(child: CircularProgressIndicator());
         }
 
-        final docs = snapshot.data?.docs ?? [];
-        final posts = docs.map((doc) => Post.fromFirestore(doc)).toList();
-        final visiblePosts = posts.where((p) => !p.isDeleted && !_sessionHiddenPosts.contains(p.postId) && !_pendingActions.containsKey(p.postId)).toList();
+        allPosts = (snapshot.data?.docs ?? []).map((doc) => Post.fromFirestore(doc)).toList();
+
+        final visiblePosts = allPosts.where((p) => 
+          !p.isDeleted && 
+          !_sessionHiddenPosts.contains(p.postId) &&
+          !_pendingActions.containsKey(p.postId)
+        ).toList();
 
         if (visiblePosts.isEmpty && _pendingActions.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Text(_emptyPostMessage, style: const TextStyle(fontSize: 16, color: Colors.grey)),
-            ),
-          );
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Text(_emptyPostMessage, style: const TextStyle(fontSize: 16, color: Colors.grey)),
+              ),
+            );
         }
 
         return RefreshIndicator(
           onRefresh: _refresh,
           child: ListView.builder(
             padding: const EdgeInsets.all(8.0),
-            itemCount: posts.length,
+            itemCount: allPosts.length,
             itemBuilder: (context, index) {
-              final post = posts[index];
+              final post = allPosts[index];
               final action = _pendingActions[post.postId];
 
               if (action != null) {
@@ -374,9 +400,14 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
           return const Center(child: CircularProgressIndicator());
         }
 
-        final docs = snapshot.data?.docs ?? [];
-        final posts = docs.map((doc) => Post.fromFirestore(doc)).toList();
-        final visiblePosts = posts.where((p) => !p.isDeleted && !_sessionHiddenPosts.contains(p.postId) && !_pendingActions.containsKey(p.postId)).toList();
+        allPosts = (snapshot.data?.docs ?? []).map((doc) => Post.fromFirestore(doc)).toList();
+        
+        allPosts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+        final visiblePosts = allPosts.where((p) => 
+          !p.isDeleted && 
+          !_sessionHiddenPosts.contains(p.postId) &&
+          !_pendingActions.containsKey(p.postId)
+        ).toList();
 
         if (visiblePosts.isEmpty && _pendingActions.isEmpty) {
           return Center(
@@ -386,16 +417,14 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
             ),
           );
         }
-        
-        posts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
         return RefreshIndicator(
           onRefresh: _refresh,
           child: ListView.builder(
             padding: const EdgeInsets.all(8.0),
-            itemCount: posts.length,
+            itemCount: allPosts.length,
             itemBuilder: (context, index) {
-              final post = posts[index];
+              final post = allPosts[index];
                final action = _pendingActions[post.postId];
 
               if (action != null) {
@@ -435,9 +464,14 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
           return const Center(child: CircularProgressIndicator());
         }
 
-        final docs = snapshot.data?.docs ?? [];
-        final posts = docs.map((doc) => Post.fromFirestore(doc)).toList();
-        final visiblePosts = posts.where((p) => !p.isDeleted && !_sessionHiddenPosts.contains(p.postId) && !_pendingActions.containsKey(p.postId)).toList();
+        allPosts = (snapshot.data?.docs ?? []).map((doc) => Post.fromFirestore(doc)).toList();
+        allPosts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+        final visiblePosts = allPosts.where((p) => 
+          !p.isDeleted && 
+          !_sessionHiddenPosts.contains(p.postId) &&
+          !_pendingActions.containsKey(p.postId)
+        ).toList();
 
         if (visiblePosts.isEmpty && _pendingActions.isEmpty) {
           return Center(
@@ -448,15 +482,14 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
           );
         }
         
-        posts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
         return RefreshIndicator(
           onRefresh: _refresh,
           child: ListView.builder(
             padding: const EdgeInsets.all(8.0),
-            itemCount: posts.length,
+            itemCount: allPosts.length,
             itemBuilder: (context, index) {
-              final post = posts[index];
+              final post = allPosts[index];
               final action = _pendingActions[post.postId];
 
               if (action != null) {

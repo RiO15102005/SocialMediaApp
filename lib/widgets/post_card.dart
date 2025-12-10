@@ -197,9 +197,6 @@ class _PostCardState extends State<PostCard> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.post.isHidden || widget.post.isDeleted) {
-      return const SizedBox.shrink();
-    }
     final bool isLiked = currentUser != null && widget.post.likes.contains(currentUser!.uid);
     final bool isSaved = currentUser != null && widget.post.savers.contains(currentUser!.uid);
     final bool isReposted = currentUser != null && widget.post.repostedBy.contains(currentUser!.uid);
@@ -209,7 +206,7 @@ class _PostCardState extends State<PostCard> {
 
     final bool longContent = widget.post.content.length > 140;
     final String displayContent =
-        (!longContent || _expanded) ? widget.post.content : widget.post.content.substring(0, 140) + '...';
+        (!longContent || _expanded) ? widget.post.content : '${widget.post.content.substring(0, 140)}...';
 
     return Container(
       width: double.infinity,
@@ -241,7 +238,7 @@ class _PostCardState extends State<PostCard> {
                 icon: const Icon(Icons.more_horiz, size: 20),
                 onSelected: (value) async {
                   if (value == "delete") {
-                    final confirm = await _confirmAction("Xóa bài viết?", "Bạn có chắc chắn muốn xóa bài viết này không? Hành động này không thể hoàn tác.");
+                    final confirm = await _confirmAction("Xóa bài viết?", "Bạn có chắc chắn muốn xóa bài viết này không?");
                     if (confirm) {
                       widget.onPostDeleted?.call();
                     }

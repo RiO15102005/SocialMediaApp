@@ -26,6 +26,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final Map<String, String> _pendingActions = {}; // postId -> 'hide' or 'delete'
   final Map<String, Timer> _pendingTimers = {};
   final Set<String> _sessionHiddenPosts = {};
+  List<Post> _allPosts = []; // Keep a state copy of posts to avoid loading indicators on refresh
 
   @override
   void initState() {
@@ -35,27 +36,57 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    for (var timer in _pendingTimers.values) {
-      timer.cancel();
-    }
+    _clearPendingActions(commit: true);
     super.dispose();
   }
 
-  Future<void> _refresh() async {
-    _clearPendingActions();
-    setState(() {
-      _friendsListFuture = _userService.getCurrentUserFriendsList();
-    });
+  void _commitAction(String postId, String action) {
+    if (action == 'delete') {
+      _postService.deletePost(postId);
+    } else if (action == 'hide') {
+      _sessionHiddenPosts.add(postId);
+    }
+    if (mounted) {
+      setState(() {
+        _pendingActions.remove(postId);
+        _pendingTimers.remove(postId);
+      });
+    }
   }
 
-  void _clearPendingActions() {
+  void _clearPendingActions({bool commit = false}) {
+    final actionsToCommit = Map<String, String>.from(_pendingActions);
+
     for (var timer in _pendingTimers.values) {
       timer.cancel();
     }
     _pendingTimers.clear();
-    setState(() {
-      _pendingActions.clear();
-    });
+
+    if (mounted) {
+      setState(() {
+        _pendingActions.clear();
+      });
+    }
+
+    if (commit) {
+      actionsToCommit.forEach((postId, action) {
+        if (action == 'delete') {
+          _postService.deletePost(postId);
+        } else if (action == 'hide') {
+          _sessionHiddenPosts.add(postId);
+        }
+      });
+    }
+  }
+
+  Future<void> _refresh() async {
+    _clearPendingActions(commit: true);
+    if (mounted) {
+      setState(() {
+        _friendsListFuture = _userService.getCurrentUserFriendsList();
+      });
+      await _friendsListFuture;
+    }
   }
 
   void _handlePostAction(String postId, String action) {
@@ -69,14 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final timer = Timer(const Duration(seconds: 5), () {
       if (_pendingActions.containsKey(postId)) {
-        if (action == 'delete') {
-          _postService.deletePost(postId);
-        } else if (action == 'hide') {
-          _sessionHiddenPosts.add(postId);
-        }
-        _pendingActions.remove(postId);
-        _pendingTimers.remove(postId);
-        setState(() {});
+        _commitAction(postId, action);
       }
     });
 
@@ -109,7 +133,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildUndoBanner(String message, VoidCallback onUndo) {
     return Container(
       key: UniqueKey(),
-      color: const Color(0xFFF0F2F5),
+      color: Colors.white,
       margin: const EdgeInsets.symmetric(vertical: 4),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
@@ -147,14 +171,14 @@ class _HomeScreenState extends State<HomeScreen> {
         child: FutureBuilder<List<String>>(
           future: _friendsListFuture,
           builder: (context, friendSnap) {
-            if (friendSnap.connectionState == ConnectionState.waiting) {
+            if (friendSnap.connectionState == ConnectionState.waiting && _allPosts.isEmpty) {
               return const Center(child: CircularProgressIndicator());
             }
-            if (friendSnap.hasError || !friendSnap.hasData) {
+            if (friendSnap.hasError) {
               return const Center(child: Text("Không thể tải danh sách bạn bè."));
             }
 
-            final allowedUIDs = List<String>.from(friendSnap.data!); 
+            final allowedUIDs = List<String>.from(friendSnap.data ?? []);
             if (!allowedUIDs.contains(currentUser!.uid)) {
               allowedUIDs.add(currentUser!.uid);
             }
@@ -162,21 +186,20 @@ class _HomeScreenState extends State<HomeScreen> {
             return StreamBuilder<QuerySnapshot>(
               stream: _postService.getAllPostsStream(),
               builder: (context, postSnap) {
-                if (postSnap.connectionState == ConnectionState.waiting) {
+                if (postSnap.connectionState == ConnectionState.waiting && _allPosts.isEmpty) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                if (postSnap.hasError || !postSnap.hasData) {
+                if (postSnap.hasError) {
                   return Center(child: Text("Lỗi khi tải bài viết: ${postSnap.error}"));
                 }
+                if (postSnap.hasData) {
+                  _allPosts = (postSnap.data?.docs ?? []).map((doc) => Post.fromFirestore(doc)).toList();
+                }
 
-                final docs = postSnap.data!.docs;
-                final posts = docs.map((doc) => Post.fromFirestore(doc)).toList();
-
-                final visiblePosts = posts.where((post) {
+                final visiblePosts = _allPosts.where((post) {
                   return allowedUIDs.contains(post.userId) &&
                          !post.isDeleted &&
-                         !_sessionHiddenPosts.contains(post.postId) &&
-                         !_pendingActions.containsKey(post.postId);
+                         !_sessionHiddenPosts.contains(post.postId);
                 }).toList();
 
                 if (visiblePosts.isEmpty && _pendingActions.isEmpty) {
@@ -199,9 +222,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 return ListView.builder(
                   padding: const EdgeInsets.symmetric(vertical: 8),
-                  itemCount: posts.length,
+                  itemCount: _allPosts.length,
                   itemBuilder: (context, index) {
-                    final post = posts[index];
+                    final post = _allPosts[index];
                     final action = _pendingActions[post.postId];
 
                     if (action != null) {
@@ -209,7 +232,9 @@ class _HomeScreenState extends State<HomeScreen> {
                         action == 'delete' ? 'Đã xóa bài viết.' : 'Đã ẩn bài viết.',
                         () => _undoPostAction(post.postId),
                       );
-                    } else if (post.isDeleted ||
+                    }
+                    
+                    if (post.isDeleted ||
                         _sessionHiddenPosts.contains(post.postId) ||
                         !allowedUIDs.contains(post.userId)) {
                       return const SizedBox.shrink();
