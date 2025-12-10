@@ -30,6 +30,8 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
   final ChatService _chatService = ChatService();
 
   final Map<String, Timestamp> _lastMessageTimestamps = {};
+  
+  Stream<int>? _unreadNotificationsStream;
 
   static const List<Widget> _widgetOptions = <Widget>[
     HomeScreen(),
@@ -46,6 +48,15 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
     _selectedIndex = widget.initialIndex; // ⭐ CHỌN TAB BAN ĐẦU
 
     _listenForNewChatMessages();
+    
+    if (currentUser != null) {
+      _unreadNotificationsStream = FirebaseFirestore.instance
+          .collection('notifications')
+          .where('userId', isEqualTo: currentUser!.uid)
+          .where('isRead', isEqualTo: false)
+          .snapshots()
+          .map((snapshot) => snapshot.docs.length);
+    }
   }
 
   @override
@@ -212,12 +223,24 @@ class _MainLayoutScreenState extends State<MainLayoutScreen> {
       ),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Bảng tin'),
-          BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Nhắn tin'),
-          BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Tìm kiếm'),
-          BottomNavigationBarItem(icon: Icon(Icons.notifications), label: 'Thông báo'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Cá nhân'),
+        items: [
+          const BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Bảng tin'),
+          const BottomNavigationBarItem(icon: Icon(Icons.chat), label: 'Nhắn tin'),
+          const BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Tìm kiếm'),
+          BottomNavigationBarItem(
+              icon: StreamBuilder<int>(
+                stream: _unreadNotificationsStream,
+                builder: (context, snapshot) {
+                  final unreadCount = snapshot.data ?? 0;
+                  return Badge(
+                    label: Text(unreadCount.toString()),
+                    isLabelVisible: unreadCount > 0,
+                    child: const Icon(Icons.notifications),
+                  );
+                },
+              ),
+              label: 'Thông báo'),
+          const BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Cá nhân'),
         ],
         currentIndex: _selectedIndex,
         selectedItemColor: Theme.of(context).primaryColor,

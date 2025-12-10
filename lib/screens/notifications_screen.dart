@@ -16,19 +16,39 @@ class NotificationsScreen extends StatefulWidget {
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
   final currentUser = FirebaseAuth.instance.currentUser;
-  bool _showOld = false;
+  
+  bool _isSearching = false;
+  final _searchController = TextEditingController();
+  String _searchQuery = "";
+  String _filter = "all"; // "all", "read", "unread"
 
-  // ============================
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(() {
+      setState(() {
+        _searchQuery = _searchController.text;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  // ===========================
   // FORMAT TIME
-  // ============================
+  // ===========================
   String _formatTime(Timestamp t) {
     final dt = t.toDate();
     return "${dt.hour}:${dt.minute.toString().padLeft(2, '0')} ${dt.day}/${dt.month}";
   }
 
-  // ============================
+  // ===========================
   // ICON FOR TYPE
-  // ============================
+  // ===========================
   IconData _iconForType(String type) {
     switch (type) {
       case "post":
@@ -48,9 +68,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
-  // ============================
+  // ===========================
   // MESSAGE FOR NOTIFICATION
-  // ============================
+  // ===========================
   String _messageForType(Map<String, dynamic> n) {
     final name = n["senderName"] ?? "Ai đó";
 
@@ -82,16 +102,32 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     });
   }
 
+  Future<void> _deleteNotification(String id) async {
+    await FirebaseFirestore.instance.collection("notifications").doc(id).delete();
+  }
+
+  Future<void> _blockUser(String userIdToBlock) async {
+    if (currentUser == null) return;
+
+    await FirebaseFirestore.instance.collection("users").doc(currentUser!.uid).update({
+      "blockedUsers": FieldValue.arrayUnion([userIdToBlock]),
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Bạn đã chặn người dùng này.")),
+      );
+    }
+  }
+
   Future<Post?> _fetchPost(String postId) async {
     final snap = await FirebaseFirestore.instance.collection("POST").doc(postId).get();
     if (!snap.exists) return null;
     return Post.fromFirestore(snap);
   }
 
-  // =======================================================
-  // KIỂM TRA A HỦY LỜI MỜI CHƯA
-  // =======================================================
   Future<bool> _isRequestCancelled(String senderId) async {
+    if (currentUser == null) return false;
     final q = await FirebaseFirestore.instance
         .collection("friend_requests")
         .where("senderId", isEqualTo: senderId)
@@ -103,11 +139,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return q.docs.first.data()["status"] == "cancelled";
   }
 
-  // =======================================================
-  // ACCEPT FRIEND REQUEST
-  // =======================================================
   Future<void> _acceptFriendRequest(String senderId, String notiId) async {
-    // Add friend 2 chiều
+    if (currentUser == null) return;
     await FirebaseFirestore.instance.collection("users").doc(currentUser!.uid).update({
       "friends": FieldValue.arrayUnion([senderId])
     });
@@ -115,12 +148,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       "friends": FieldValue.arrayUnion([currentUser!.uid])
     });
 
-    // Update notification (của người nhận)
     await FirebaseFirestore.instance.collection("notifications").doc(notiId).update({
       "accepted": true
     }).catchError((_) {});
 
-    // Update friend_requests
     final pending = await FirebaseFirestore.instance
         .collection("friend_requests")
         .where("senderId", isEqualTo: senderId)
@@ -133,12 +164,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       await pending.docs.first.reference.update({"status": "accepted"});
     }
 
-    // Gửi thông báo cho người gửi
-    final me = await FirebaseFirestore.instance
-        .collection("users")
-        .doc(currentUser!.uid)
-        .get();
-
+    final me = await FirebaseFirestore.instance.collection("users").doc(currentUser!.uid).get();
     final senderName = me.data()?["displayName"] ?? "Ai đó";
 
     await FirebaseFirestore.instance.collection("notifications").add({
@@ -151,10 +177,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     });
   }
 
-  // =======================================================
-  // DECLINE FRIEND REQUEST — Không gửi thông báo
-  // =======================================================
   Future<void> _declineFriendRequest(String senderId, String notiId) async {
+    if (currentUser == null) return;
     await FirebaseFirestore.instance.collection("notifications").doc(notiId).delete();
 
     final pending = await FirebaseFirestore.instance
@@ -170,12 +194,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
-  Future<bool> _confirmDelete() async {
+  Future<bool> _confirmAction(String title, String content) async {
     return await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("Xóa thông báo"),
-        content: const Text("Bạn có chắc muốn xóa thông báo này không?"),
+        title: Text(title),
+        content: Text(content),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Không")),
           TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Có")),
@@ -183,6 +207,57 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       ),
     ) ??
         false;
+  }
+  
+  void _handleAppBarMenu(String value) {
+    switch(value) {
+      case "mark_all_read":
+        _markAllAsRead();
+        break;
+      case "delete_all":
+        _deleteAllNotifications();
+        break;
+      case "filter_unread":
+        setState(() => _filter = "unread");
+        break;
+      case "filter_read":
+        setState(() => _filter = "read");
+        break;
+      case "filter_all":
+        setState(() => _filter = "all");
+        break;
+    }
+  }
+  
+  Future<void> _markAllAsRead() async {
+    if(currentUser == null) return;
+    final notifications = await FirebaseFirestore.instance
+      .collection("notifications")
+      .where("userId", isEqualTo: currentUser!.uid)
+      .where("isRead", isEqualTo: false)
+      .get();
+      
+    final batch = FirebaseFirestore.instance.batch();
+    for(final doc in notifications.docs) {
+      batch.update(doc.reference, {"isRead": true});
+    }
+    await batch.commit();
+  }
+  
+  Future<void> _deleteAllNotifications() async {
+    final confirm = await _confirmAction("Xóa tất cả?", "Bạn có chắc muốn xóa tất cả thông báo không? Hành động này không thể hoàn tác.");
+    if(!confirm || currentUser == null) return;
+    
+    final notifications = await FirebaseFirestore.instance
+      .collection("notifications")
+      .where("userId", isEqualTo: currentUser!.uid)
+      .get();
+      
+    final batch = FirebaseFirestore.instance.batch();
+    for(final doc in notifications.docs) {
+      batch.delete(doc.reference);
+    }
+    await batch.commit();
   }
 
   @override
@@ -195,7 +270,46 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Thông báo"), backgroundColor: const Color(0xFF1877F2)),
+      appBar: AppBar(
+        title: _isSearching
+            ? TextField(
+                controller: _searchController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: "Tìm kiếm thông báo...",
+                  border: InputBorder.none,
+                  hintStyle: TextStyle(color: Colors.white70)
+                ),
+                style: const TextStyle(color: Colors.white),
+              )
+            : const Text("Thông báo"),
+        backgroundColor: const Color(0xFF1877F2),
+        actions: [
+          IconButton(
+            icon: Icon(_isSearching ? Icons.close : Icons.search),
+            onPressed: () {
+              setState(() {
+                _isSearching = !_isSearching;
+                if (!_isSearching) {
+                  _searchQuery = "";
+                  _searchController.clear();
+                }
+              });
+            },
+          ),
+          PopupMenuButton<String>(
+            onSelected: _handleAppBarMenu,
+            itemBuilder: (context) => [
+              const PopupMenuItem(value: "mark_all_read", child: Text("Đánh dấu tất cả đã đọc")),
+              const PopupMenuItem(value: "delete_all", child: Text("Xóa tất cả thông báo")),
+              const PopupMenuDivider(),
+              const PopupMenuItem(value: "filter_unread", child: Text("Chỉ hiện chưa đọc")),
+              const PopupMenuItem(value: "filter_read", child: Text("Chỉ hiện đã đọc")),
+              const PopupMenuItem(value: "filter_all", child: Text("Hiện tất cả")),
+            ],
+          )
+        ],
+      ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
             .collection("notifications")
@@ -205,33 +319,39 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         builder: (context, snap) {
           if (!snap.hasData) return const Center(child: CircularProgressIndicator());
 
-          final all = snap.data!.docs;
+          var all = snap.data!.docs;
+
+          if (_filter == "unread") {
+            all = all.where((doc) => doc.data()["isRead"] == false).toList();
+          } else if (_filter == "read") {
+            all = all.where((doc) => doc.data()["isRead"] == true).toList();
+          }
+
+          if (_searchQuery.isNotEmpty) {
+            all = all.where((doc) {
+              final data = doc.data();
+              final message = _messageForType(data).toLowerCase();
+              final sender = (data["senderName"] ?? "").toLowerCase();
+              final query = _searchQuery.toLowerCase();
+              return message.contains(query) || sender.contains(query);
+            }).toList();
+          }
+          
           if (all.isEmpty) return const Center(child: Text("Không có thông báo."));
 
-          final newest10 = all.take(10).toList();
-          final old = all.skip(10).toList();
-
-          final showList = [...newest10];
-          if (_showOld) showList.addAll(old);
-
-          return ListView(
-            children: [
-              ...showList.map((doc) {
+          return ListView.builder(
+            itemCount: all.length,
+            itemBuilder: (context, index) {
+                final doc = all[index];
                 final data = doc.data();
                 final notiId = doc.id;
                 final isRead = data["isRead"] ?? false;
                 final accepted = data["accepted"] ?? false;
 
-                // =====================================================
-                // ⭐ AUTO-DELETE nếu người gửi đã HỦY LỜI MỜI
-                // =====================================================
                 if (data["type"] == "friend_request") {
                   _isRequestCancelled(data["senderId"]).then((cancelled) async {
                     if (cancelled) {
-                      await FirebaseFirestore.instance
-                          .collection("notifications")
-                          .doc(notiId)
-                          .delete();
+                      await FirebaseFirestore.instance.collection("notifications").doc(notiId).delete();
                     }
                   });
                 }
@@ -253,11 +373,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (data["timestamp"] != null)
-                          Text(_formatTime(data["timestamp"])),
+                        if (data["timestamp"] != null) Text(_formatTime(data["timestamp"])),
                         const SizedBox(height: 8),
 
-                        // BUTTONS FOR PENDING FRIEND REQUEST
                         if (data["type"] == "friend_request" && !accepted)
                           Row(
                             children: [
@@ -267,7 +385,6 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                   child: ElevatedButton(
                                     onPressed: () async {
                                       await _acceptFriendRequest(data["senderId"], notiId);
-                                      setState(() {});
                                     },
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: Colors.blue,
@@ -283,27 +400,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                   height: 38,
                                   child: OutlinedButton(
                                     onPressed: () async {
-                                      final ok = await showDialog<bool>(
-                                        context: context,
-                                        builder: (ctx) => AlertDialog(
-                                          title: const Text("Từ chối kết bạn"),
-                                          content: const Text(
-                                              "Bạn có chắc muốn từ chối yêu cầu này không?"),
-                                          actions: [
-                                            TextButton(
-                                                onPressed: () => Navigator.pop(ctx, false),
-                                                child: const Text("Không")),
-                                            TextButton(
-                                                onPressed: () => Navigator.pop(ctx, true),
-                                                child: const Text("Có")),
-                                          ],
-                                        ),
-                                      ) ??
-                                          false;
-
+                                      final ok = await _confirmAction("Từ chối kết bạn", "Bạn có chắc muốn từ chối yêu cầu này không?");
                                       if (ok) {
                                         await _declineFriendRequest(data["senderId"], notiId);
-                                        setState(() {});
                                       }
                                     },
                                     child: const Text("Từ chối", style: TextStyle(color: Colors.black)),
@@ -321,19 +420,41 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
                     trailing: PopupMenuButton<String>(
                       onSelected: (value) async {
-                        if (value == "delete") {
-                          final ok = await _confirmDelete();
-                          if (ok) {
-                            await FirebaseFirestore.instance
-                                .collection("notifications")
-                                .doc(notiId)
-                                .delete();
-                          }
+                        switch (value) {
+                          case 'mark_as_read':
+                            await _markAsRead(notiId);
+                            break;
+                          case 'delete':
+                            final ok = await _confirmAction("Xóa thông báo","Bạn có chắc muốn xóa thông báo này không?");
+                            if (ok) {
+                              await _deleteNotification(notiId);
+                            }
+                            break;
+                          case 'block':
+                             final confirm = await _confirmAction(
+                                "Chặn người dùng",
+                                "Bạn có muốn chặn ${data['senderName'] ?? 'người dùng này'}? Bạn sẽ không nhận được thông báo từ họ nữa.",
+                              );
+                              if (confirm) {
+                                await _blockUser(data['senderId']);
+                              }
+                            break;
                         }
                       },
                       itemBuilder: (context) => [
+                        if (!isRead)
+                          const PopupMenuItem(
+                            value: 'mark_as_read',
+                            child: Row(
+                              children: [
+                                Icon(Icons.check, color: Colors.green),
+                                SizedBox(width: 8),
+                                Text("Đánh dấu đã đọc"),
+                              ],
+                            ),
+                          ),
                         const PopupMenuItem(
-                          value: "delete",
+                          value: 'delete',
                           child: Row(
                             children: [
                               Icon(Icons.delete, color: Colors.red),
@@ -341,12 +462,23 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                               Text("Xóa thông báo"),
                             ],
                           ),
-                        )
+                        ),
+                         if (data['senderId'] != null)
+                          const PopupMenuItem(
+                            value: 'block',
+                            child: Row(
+                              children: [
+                                Icon(Icons.block, color: Colors.orange),
+                                SizedBox(width: 8),
+                                Text("Chặn người dùng này"),
+                              ],
+                            ),
+                          ),
                       ],
                     ),
 
                     onTap: () async {
-                      _markAsRead(notiId);
+                      if(!isRead) _markAsRead(notiId);
 
                       if (data["postId"] != null) {
                         final post = await _fetchPost(data["postId"]);
@@ -355,26 +487,18 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             context,
                             MaterialPageRoute(builder: (_) => CommentScreen(post: post)),
                           );
+                        } else if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("Bài viết hoặc bình luận này đã bị xóa."),
+                            ),
+                          );
                         }
                       }
                     },
                   ),
                 );
-              }),
-
-              if (old.isNotEmpty)
-                ListTile(
-                  title: Text(
-                    _showOld ? "Thu gọn thông báo cũ" : "Xem thêm thông báo cũ (${old.length})",
-                    style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
-                  ),
-                  trailing: Icon(
-                    _showOld ? Icons.expand_less : Icons.expand_more,
-                    color: Colors.blue,
-                  ),
-                  onTap: () => setState(() => _showOld = !_showOld),
-                ),
-            ],
+              },
           );
         },
       ),

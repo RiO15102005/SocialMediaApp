@@ -40,6 +40,10 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
 
   late TabController _tabController;
 
+  final Map<String, String> _pendingActions = {}; // postId -> 'hide' or 'delete'
+  final Map<String, Timer> _pendingTimers = {};
+  final Set<String> _sessionHiddenPosts = {};
+
   @override
   void initState() {
     super.initState();
@@ -58,7 +62,67 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
   @override
   void dispose() {
     _tabController.dispose();
+    for (var timer in _pendingTimers.values) {
+      timer.cancel();
+    }
     super.dispose();
+  }
+
+  void _clearPendingActions() {
+    for (var timer in _pendingTimers.values) {
+      timer.cancel();
+    }
+    if (mounted) {
+      _pendingTimers.clear();
+      setState(() {
+        _pendingActions.clear();
+      });
+    }
+  }
+
+  Future<void> _refresh() async {
+    _clearPendingActions();
+    if (mounted) {
+      setState(() {
+        // This will trigger the stream builders to rebuild
+      });
+    }
+  }
+
+  void _handlePostAction(String postId, String action) {
+    if (!mounted) return;
+
+    _pendingTimers[postId]?.cancel();
+
+    setState(() {
+      _pendingActions[postId] = action;
+    });
+
+    final timer = Timer(const Duration(seconds: 5), () {
+      if (_pendingActions.containsKey(postId)) {
+        if (action == 'delete') {
+          _postService.deletePost(postId);
+        } else if (action == 'hide') {
+          _sessionHiddenPosts.add(postId);
+        }
+        _pendingActions.remove(postId);
+        _pendingTimers.remove(postId);
+        setState(() {});
+      }
+    });
+
+    _pendingTimers[postId] = timer;
+  }
+
+  void _undoPostAction(String postId) {
+    if (!mounted) return;
+
+    _pendingTimers[postId]?.cancel();
+    _pendingTimers.remove(postId);
+
+    setState(() {
+      _pendingActions.remove(postId);
+    });
   }
 
   void _onPostSaved(bool isSaved) {
@@ -71,7 +135,6 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
           backgroundColor: Colors.grey[800],
         ),
       );
-      // If on the saved tab and a post is unsaved, refresh the list.
       if (!isSaved && _tabController.index == 1) {
         setState(() {});
       }
@@ -93,6 +156,25 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
     if (mounted) {
       Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
     }
+  }
+
+  Widget _buildUndoBanner(String message, VoidCallback onUndo) {
+    return Container(
+      key: UniqueKey(),
+      color: Colors.white,
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(message, style: const TextStyle(color: Colors.black87)),
+          TextButton(
+            onPressed: onUndo,
+            child: const Text('Hoàn tác', style: TextStyle(color: Colors.blueAccent)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -229,16 +311,15 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
         if (snapshot.hasError) {
           return const Center(child: Text("Lỗi khi tải bài viết."));
         }
-
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
 
         final docs = snapshot.data?.docs ?? [];
-        // Không lọc theo content.trim() để tránh vô tình loại hết bài (nếu có trường hợp content rỗng)
-        final posts = docs.map((doc) => Post.fromFirestore(doc)).where((post) => !post.isDeleted).toList();
+        final posts = docs.map((doc) => Post.fromFirestore(doc)).toList();
+        final visiblePosts = posts.where((p) => !p.isDeleted && !_sessionHiddenPosts.contains(p.postId) && !_pendingActions.containsKey(p.postId)).toList();
 
-        if (posts.isEmpty) {
+        if (visiblePosts.isEmpty && _pendingActions.isEmpty) {
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(20.0),
@@ -247,15 +328,36 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
           );
         }
 
-        return ListView.builder(
-          shrinkWrap: true,
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(8.0),
-          itemCount: posts.length,
-          itemBuilder: (context, index) {
-            final post = posts[index];
-            return PostCard(post: post, onPostSaved: _onPostSaved, source: 'profile');
-          },
+        return RefreshIndicator(
+          onRefresh: _refresh,
+          child: ListView.builder(
+            padding: const EdgeInsets.all(8.0),
+            itemCount: posts.length,
+            itemBuilder: (context, index) {
+              final post = posts[index];
+              final action = _pendingActions[post.postId];
+
+              if (action != null) {
+                return _buildUndoBanner(
+                  action == 'delete' ? 'Đã xóa bài viết.' : 'Đã ẩn bài viết.',
+                  () => _undoPostAction(post.postId),
+                );
+              }
+
+              if (post.isDeleted || _sessionHiddenPosts.contains(post.postId)) {
+                return const SizedBox.shrink();
+              }
+
+              return PostCard(
+                key: ValueKey(post.postId),
+                post: post,
+                onPostSaved: _onPostSaved,
+                onPostDeleted: () => _handlePostAction(post.postId, 'delete'),
+                onPostHidden: () => _handlePostAction(post.postId, 'hide'),
+                source: 'profile',
+              );
+            },
+          ),
         );
       },
     );
@@ -268,15 +370,15 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
         if (snapshot.hasError) {
           return Center(child: Text("Lỗi khi tải bài viết đã lưu: ${snapshot.error}"));
         }
-
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
 
         final docs = snapshot.data?.docs ?? [];
-        final posts = docs.map((doc) => Post.fromFirestore(doc)).where((post) => !post.isDeleted).toList();
+        final posts = docs.map((doc) => Post.fromFirestore(doc)).toList();
+        final visiblePosts = posts.where((p) => !p.isDeleted && !_sessionHiddenPosts.contains(p.postId) && !_pendingActions.containsKey(p.postId)).toList();
 
-        if (posts.isEmpty) {
+        if (visiblePosts.isEmpty && _pendingActions.isEmpty) {
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(20.0),
@@ -284,18 +386,39 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
             ),
           );
         }
-
+        
         posts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
-        return ListView.builder(
-          shrinkWrap: true,
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(8.0),
-          itemCount: posts.length,
-          itemBuilder: (context, index) {
-            final post = posts[index];
-            return PostCard(post: post, onPostSaved: _onPostSaved, source: 'profile');
-          },
+        return RefreshIndicator(
+          onRefresh: _refresh,
+          child: ListView.builder(
+            padding: const EdgeInsets.all(8.0),
+            itemCount: posts.length,
+            itemBuilder: (context, index) {
+              final post = posts[index];
+               final action = _pendingActions[post.postId];
+
+              if (action != null) {
+                return _buildUndoBanner(
+                  action == 'delete' ? 'Đã xóa bài viết.' : 'Đã ẩn bài viết.',
+                  () => _undoPostAction(post.postId),
+                );
+              }
+
+              if (post.isDeleted || _sessionHiddenPosts.contains(post.postId)) {
+                return const SizedBox.shrink();
+              }
+              
+              return PostCard(
+                key: ValueKey(post.postId),
+                post: post,
+                onPostSaved: _onPostSaved,
+                onPostDeleted: () => _handlePostAction(post.postId, 'delete'),
+                onPostHidden: () => _handlePostAction(post.postId, 'hide'),
+                source: 'profile',
+              );
+            },
+          ),
         );
       },
     );
@@ -308,15 +431,15 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
         if (snapshot.hasError) {
           return const Center(child: Text("Lỗi khi tải bài viết đã đăng lại."));
         }
-
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
         }
 
         final docs = snapshot.data?.docs ?? [];
-        final posts = docs.map((doc) => Post.fromFirestore(doc)).where((post) => !post.isDeleted).toList();
+        final posts = docs.map((doc) => Post.fromFirestore(doc)).toList();
+        final visiblePosts = posts.where((p) => !p.isDeleted && !_sessionHiddenPosts.contains(p.postId) && !_pendingActions.containsKey(p.postId)).toList();
 
-        if (posts.isEmpty) {
+        if (visiblePosts.isEmpty && _pendingActions.isEmpty) {
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(20.0),
@@ -324,18 +447,39 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
             ),
           );
         }
-
+        
         posts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
-        return ListView.builder(
-          shrinkWrap: true,
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(8.0),
-          itemCount: posts.length,
-          itemBuilder: (context, index) {
-            final post = posts[index];
-            return PostCard(post: post, onPostSaved: _onPostSaved, source: 'profile');
-          },
+        return RefreshIndicator(
+          onRefresh: _refresh,
+          child: ListView.builder(
+            padding: const EdgeInsets.all(8.0),
+            itemCount: posts.length,
+            itemBuilder: (context, index) {
+              final post = posts[index];
+              final action = _pendingActions[post.postId];
+
+              if (action != null) {
+                return _buildUndoBanner(
+                  action == 'delete' ? 'Đã xóa bài viết.' : 'Đã ẩn bài viết.',
+                  () => _undoPostAction(post.postId),
+                );
+              }
+
+              if (post.isDeleted || _sessionHiddenPosts.contains(post.postId)) {
+                return const SizedBox.shrink();
+              }
+              
+              return PostCard(
+                key: ValueKey(post.postId),
+                post: post,
+                onPostSaved: _onPostSaved,
+                onPostDeleted: () => _handlePostAction(post.postId, 'delete'),
+                onPostHidden: () => _handlePostAction(post.postId, 'hide'),
+                source: 'profile',
+              );
+            },
+          ),
         );
       },
     );

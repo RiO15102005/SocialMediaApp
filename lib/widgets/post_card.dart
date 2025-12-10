@@ -175,6 +175,26 @@ class _PostCardState extends State<PostCard> {
     }
   }
 
+  Future<bool> _confirmAction(String title, String content) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text(title),
+            content: Text(content),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text("Hủy")),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text("Xác nhận", style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.post.isHidden || widget.post.isDeleted) {
@@ -219,9 +239,12 @@ class _PostCardState extends State<PostCard> {
               ),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_horiz, size: 20),
-                onSelected: (value) {
+                onSelected: (value) async {
                   if (value == "delete") {
-                    widget.onPostDeleted?.call();
+                    final confirm = await _confirmAction("Xóa bài viết?", "Bạn có chắc chắn muốn xóa bài viết này không? Hành động này không thể hoàn tác.");
+                    if (confirm) {
+                      widget.onPostDeleted?.call();
+                    }
                   } else if (value == "hide") {
                     widget.onPostHidden?.call();
                   }

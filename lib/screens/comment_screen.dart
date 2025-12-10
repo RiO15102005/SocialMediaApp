@@ -51,6 +51,14 @@ class _CommentScreenState extends State<CommentScreen> {
     super.initState();
     _loadUserName();
   }
+  
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
 
   Future<void> _loadUserName() async {
     if (currentUser == null) return;
@@ -142,8 +150,31 @@ class _CommentScreenState extends State<CommentScreen> {
     });
   }
 
-  Future<void> _delete(String id) async {
-    await _postService.deleteComment(widget.post.postId, id);
+  Future<void> _deleteComment(String commentId) async {
+    if (!mounted) return;
+
+    try {
+      await _postService.deleteComment(widget.post.postId, commentId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).removeCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Đã xóa bình luận"),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).removeCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Lỗi khi xóa bình luận"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _likeComment(String commentId) async {
@@ -224,7 +255,7 @@ class _CommentScreenState extends State<CommentScreen> {
                         delegate: SliverChildBuilderDelegate(
                           (context, i) {
                             final parent = parents[i];
-                            final replies = repliesMap[parent.commentId] ?? [];
+                            final replies = repliesMap[parent.commentId]?.toList() ?? [];
                             final expanded = _expanded.contains(parent.commentId);
 
                             final bool canDeleteParent =
@@ -243,7 +274,7 @@ class _CommentScreenState extends State<CommentScreen> {
                                   isPostAuthor: isPostAuthor,
                                   onReply: _replyTo,
                                   onToggleReplies: _toggle,
-                                  onDelete: _delete,
+                                  onDelete: _deleteComment,
                                   onLike: _likeComment,
                                 ),
                                 if (expanded)
@@ -251,7 +282,7 @@ class _CommentScreenState extends State<CommentScreen> {
                                     final bool canDeleteReply = (currentUser != null) &&
                                         (currentUser!.uid == postOwner || currentUser!.uid == r.userId);
                                     final bool isReplyPostAuthor = r.userId == postOwner;
-
+                                    
                                     return Padding(
                                       padding: const EdgeInsets.only(left: 32),
                                       child: cmt.CommentItem(
@@ -261,7 +292,7 @@ class _CommentScreenState extends State<CommentScreen> {
                                         canDelete: canDeleteReply,
                                         isPostAuthor: isReplyPostAuthor,
                                         onReply: _replyTo,
-                                        onDelete: _delete,
+                                        onDelete: _deleteComment,
                                         onLike: _likeComment,
                                       ),
                                     );

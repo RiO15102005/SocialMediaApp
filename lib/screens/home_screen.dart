@@ -23,9 +23,9 @@ class _HomeScreenState extends State<HomeScreen> {
   late Future<List<String>> _friendsListFuture;
   final String _emptyMessage = "Nơi này thật yên tĩnh... Hãy phá vỡ sự im lặng này!";
 
-  // State for managing inline undo actions
   final Map<String, String> _pendingActions = {}; // postId -> 'hide' or 'delete'
   final Map<String, Timer> _pendingTimers = {};
+  final Set<String> _sessionHiddenPosts = {};
 
   @override
   void initState() {
@@ -35,7 +35,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    // Cancel all timers when the screen is disposed
     for (var timer in _pendingTimers.values) {
       timer.cancel();
     }
@@ -43,7 +42,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _refresh() async {
-    // Clear pending actions on refresh
     _clearPendingActions();
     setState(() {
       _friendsListFuture = _userService.getCurrentUserFriendsList();
@@ -63,25 +61,22 @@ class _HomeScreenState extends State<HomeScreen> {
   void _handlePostAction(String postId, String action) {
     if (!mounted) return;
 
-    // Cancel any existing timer for this post
     _pendingTimers[postId]?.cancel();
 
-    // Set the pending action to show the inline banner
     setState(() {
       _pendingActions[postId] = action;
     });
 
-    // Start a timer to commit the action after 5 seconds
     final timer = Timer(const Duration(seconds: 5), () {
       if (_pendingActions.containsKey(postId)) {
         if (action == 'delete') {
           _postService.deletePost(postId);
         } else if (action == 'hide') {
-          _postService.hidePost(postId);
+          _sessionHiddenPosts.add(postId);
         }
         _pendingActions.remove(postId);
         _pendingTimers.remove(postId);
-        // No need to call setState, the stream will update the UI
+        setState(() {});
       }
     });
 
@@ -91,11 +86,9 @@ class _HomeScreenState extends State<HomeScreen> {
   void _undoPostAction(String postId) {
     if (!mounted) return;
 
-    // Cancel the timer
     _pendingTimers[postId]?.cancel();
     _pendingTimers.remove(postId);
 
-    // Remove the pending action to restore the post
     setState(() {
       _pendingActions.remove(postId);
     });
@@ -127,7 +120,7 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: onUndo,
             child: const Text('Hoàn tác', style: TextStyle(color: Colors.blueAccent)),
           ),
-        ], 
+        ],
       ),
     );
   }
@@ -182,7 +175,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 final visiblePosts = posts.where((post) {
                   return allowedUIDs.contains(post.userId) &&
                          !post.isDeleted &&
-                         !post.isHidden &&
+                         !_sessionHiddenPosts.contains(post.postId) &&
                          !_pendingActions.containsKey(post.postId);
                 }).toList();
 
@@ -217,7 +210,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         () => _undoPostAction(post.postId),
                       );
                     } else if (post.isDeleted ||
-                        post.isHidden ||
+                        _sessionHiddenPosts.contains(post.postId) ||
                         !allowedUIDs.contains(post.userId)) {
                       return const SizedBox.shrink();
                     }
