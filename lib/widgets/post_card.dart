@@ -65,6 +65,24 @@ class _PostCardState extends State<PostCard> {
     }
   }
 
+  Future<void> _toggleRepost() async {
+    if (currentUser == null) return;
+    final uid = currentUser!.uid;
+    final isReposted = widget.post.repostedBy.contains(uid);
+
+    setState(() {
+      isReposted ? widget.post.repostedBy.remove(uid) : widget.post.repostedBy.add(uid);
+    });
+
+    try {
+      await _postService.toggleRepost(widget.post.postId);
+    } catch (_) {
+      setState(() {
+        isReposted ? widget.post.repostedBy.add(uid) : widget.post.repostedBy.remove(uid);
+      });
+    }
+  }
+
   Future<void> _toggleSave() async {
     if (currentUser == null) return;
     final uid = currentUser!.uid;
@@ -164,8 +182,10 @@ class _PostCardState extends State<PostCard> {
     }
     final bool isLiked = currentUser != null && widget.post.likes.contains(currentUser!.uid);
     final bool isSaved = currentUser != null && widget.post.savers.contains(currentUser!.uid);
+    final bool isReposted = currentUser != null && widget.post.repostedBy.contains(currentUser!.uid);
     final String timeStr = _formatTimestamp(widget.post.timestamp.toDate());
     final int likeCount = widget.post.likes.length;
+    final int repostCount = widget.post.repostedBy.length;
 
     final bool longContent = widget.post.content.length > 140;
     final String displayContent =
@@ -271,6 +291,22 @@ class _PostCardState extends State<PostCard> {
               if (widget.post.commentsCount > 0)
                 Text(
                   '${widget.post.commentsCount}',
+                  style: const TextStyle(color: Colors.grey),
+                ),
+              const SizedBox(width: 16),
+              IconButton(
+                icon: Transform.rotate(
+                  angle: 180 * math.pi / 180,
+                  child: Icon(
+                    Icons.repeat,
+                    color: isReposted ? Colors.green : Colors.grey,
+                  ),
+                ),
+                onPressed: _toggleRepost,
+              ),
+              if (repostCount > 0)
+                Text(
+                  '$repostCount',
                   style: const TextStyle(color: Colors.grey),
                 ),
               const SizedBox(width: 16),

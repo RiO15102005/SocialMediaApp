@@ -22,9 +22,31 @@ class UserService {
         'bio': '',
         'friends': [],
         'savedPosts': [], // Add this field
+        'repostedPosts': [], // Add this field
         'photoURL': '',
         'createdAt': Timestamp.now(),
       });
+    }
+  }
+
+  Future<void> toggleRepost(String postId) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final userRef = _firestore.collection(_userCollection).doc(user.uid);
+    final doc = await userRef.get();
+
+    if (doc.exists) {
+      final repostedPosts = List<String>.from(doc.data()?['repostedPosts'] ?? []);
+      if (repostedPosts.contains(postId)) {
+        await userRef.update({
+          'repostedPosts': FieldValue.arrayRemove([postId])
+        });
+      } else {
+        await userRef.update({
+          'repostedPosts': FieldValue.arrayUnion([postId])
+        });
+      }
     }
   }
 
@@ -43,6 +65,7 @@ class UserService {
         email: data['email'] ?? '',
         displayName: data['displayName'] ?? 'Unknown User',
         photoURL: data['photoURL'] ?? '',
+        repostedPosts: List<String>.from(data['repostedPosts'] ?? []),
       );
     }).toList();
   }

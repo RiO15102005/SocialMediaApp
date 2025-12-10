@@ -29,8 +29,9 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
   final UserService _userService = UserService();
   late String _targetUserId;
   late bool _isMyProfile;
-  final String _emptyPostMessage = "Chưa có bài viết nào.";
-  final String _emptySavedMessage = "Bạn chưa lưu bài viết nào!";
+  late String _emptyPostMessage;
+  final String _emptySavedMessage = "Bạn chưa lưu bài viết nào";
+  final String _emptyRepostMessage = "Chưa có bài đăng lại ";
 
   File? _avatarImage;
   File? _coverImage;
@@ -43,7 +44,13 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
     final uid = currentUser?.uid ?? '';
     _targetUserId = widget.userId ?? uid;
     _isMyProfile = (_targetUserId == uid);
-    _tabController = TabController(length: _isMyProfile ? 2 : 1, vsync: this);
+    _tabController = TabController(length: _isMyProfile ? 3 : 2, vsync: this);
+
+    if (_isMyProfile) {
+      _emptyPostMessage = "Chưa có bài đăng lại";
+    } else {
+      _emptyPostMessage = "Chưa có bất kì bài viết nào";
+    }
   }
 
   @override
@@ -178,29 +185,38 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                           : ActionButton(isMyProfile: false, targetUserId: _targetUserId),
                     ),
                     const SizedBox(height: 20),
-                    if (_isMyProfile)
-                      TabBar(
-                        controller: _tabController,
-                        tabs: const [
-                          Tab(text: 'Bài viết'),
-                          Tab(text: 'Đã lưu'),
-                        ],
-                        labelColor: Colors.black,
-                        unselectedLabelColor: Colors.grey,
-                      ),
+                    TabBar(
+                      controller: _tabController,
+                      tabs: _isMyProfile
+                          ? const [
+                        Tab(text: 'Bài viết'),
+                        Tab(text: 'Đã lưu'),
+                        Tab(text: 'Đã đăng lại'),
+                      ]
+                          : const [
+                        Tab(text: 'Bài viết'),
+                        Tab(text: 'Đã đăng lại'),
+                      ],
+                      labelColor: Colors.black,
+                      unselectedLabelColor: Colors.grey,
+                    ),
                   ],
                 ),
               ),
             ],
-            body: _isMyProfile
-                ? TabBarView(
+            body: TabBarView(
               controller: _tabController,
-              children: [
+              children: _isMyProfile
+                  ? [
                 _buildPostsView(),
                 _buildSavedPostsView(),
+                _buildRepostsView(),
+              ]
+                  : [
+                _buildPostsView(),
+                _buildRepostsView(),
               ],
-            )
-                : _buildPostsView(),
+            ),
           );
         },
       ),
@@ -256,7 +272,40 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
         if (posts.isEmpty) {
           return Center(child: Text(_emptySavedMessage, style: const TextStyle(fontSize: 16, color: Colors.grey)));
         }
-        
+
+        posts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(8.0),
+          itemCount: posts.length,
+          itemBuilder: (context, index) {
+            final post = posts[index];
+            return PostCard(post: post, onPostSaved: _onPostSaved, source: 'profile');
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildRepostsView() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _postService.getRepostedPostsStream(_targetUserId),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Center(child: Text("Lỗi khi tải bài viết đã đăng lại."));
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+        final posts = docs.map((doc) => Post.fromFirestore(doc)).where((post) => !post.isDeleted && post.content.trim().isNotEmpty).toList();
+
+        if (posts.isEmpty) {
+          return Center(child: Text(_emptyRepostMessage, style: const TextStyle(fontSize: 16, color: Colors.grey)));
+        }
+
         posts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
         return ListView.builder(

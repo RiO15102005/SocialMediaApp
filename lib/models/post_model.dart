@@ -7,6 +7,7 @@ class Post {
   final String content;
   final List<String> likes;
   final List<String> savers;
+  final List<String> repostedBy;
   final int shares;
   final Timestamp timestamp;
   final int commentsCount;
@@ -20,6 +21,7 @@ class Post {
     required this.content,
     required this.likes,
     required this.savers,
+    required this.repostedBy,
     required this.shares,
     required this.timestamp,
     required this.commentsCount,
@@ -37,6 +39,7 @@ class Post {
       content: data['content'] ?? '',
       likes: List<String>.from(data['likes'] ?? []),
       savers: List<String>.from(data['savers'] ?? []),
+      repostedBy: List<String>.from(data['repostedBy'] ?? []),
       shares: data['shares'] ?? 0,
       timestamp: data['timestamp'] ?? Timestamp.now(),
       commentsCount: data['commentsCount'] ?? 0,

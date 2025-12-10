@@ -23,6 +23,7 @@ class PostService {
       "content": content.trim(),
       "likes": [],
       "savers": [],
+      "repostedBy": [],
       "commentsCount": 0,
       "shares": 0,
       "timestamp": Timestamp.now(),
@@ -70,6 +71,13 @@ class PostService {
       print("Error fetching posts from IDs: $e");
       return [];
     }
+  }
+
+  Stream<QuerySnapshot> getRepostedPostsStream(String userId) {
+    return _firestore
+        .collection(postCol)
+        .where('repostedBy', arrayContains: userId)
+        .snapshots();
   }
 
   Future<void> toggleLike(String postId) async {
@@ -123,6 +131,33 @@ class PostService {
       await postRef.update({"savers": FieldValue.arrayRemove([user.uid])});
     } else {
       await postRef.update({"savers": FieldValue.arrayUnion([user.uid])});
+    }
+  }
+
+  Future<void> toggleRepost(String postId) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final postRef = _firestore.collection(postCol).doc(postId);
+    final userRef = _firestore.collection('users').doc(user.uid);
+
+    final postSnap = await postRef.get();
+    final userSnap = await userRef.get();
+
+    final postData = postSnap.data() as Map<String, dynamic>?;
+    final userData = userSnap.data() as Map<String, dynamic>?;
+
+    if (postData == null || userData == null) return;
+
+    final repostedBy = List<String>.from(postData['repostedBy'] ?? []);
+    final isReposted = repostedBy.contains(user.uid);
+
+    if (isReposted) {
+      await postRef.update({'repostedBy': FieldValue.arrayRemove([user.uid])});
+      await userRef.update({'repostedPosts': FieldValue.arrayRemove([postId])});
+    } else {
+      await postRef.update({'repostedBy': FieldValue.arrayUnion([user.uid])});
+      await userRef.update({'repostedPosts': FieldValue.arrayUnion([postId])});
     }
   }
 
