@@ -1,8 +1,9 @@
-import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
+
 import 'profile_cover.dart';
 import 'profile_avatar.dart';
 import 'profile_info.dart';
@@ -10,10 +11,12 @@ import 'add_post_button.dart';
 import 'action_button.dart';
 import 'create_post_screen.dart';
 import 'friends_list_screen.dart';
+
 import '../models/post_model.dart';
 import '../services/post_service.dart';
 import '../services/user_service.dart';
 import '../widgets/post_card.dart';
+import '../services/upload_profile.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String? userId;
@@ -23,101 +26,149 @@ class ProfileScreen extends StatefulWidget {
   State<ProfileScreen> createState() => _ProfileScreenState();
 }
 
-class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateMixin {
+class _ProfileScreenState extends State<ProfileScreen>
+    with TickerProviderStateMixin {
   final User? currentUser = FirebaseAuth.instance.currentUser;
   final PostService _postService = PostService();
-  final UserService _userService = UserService();
+
   late String _targetUserId;
   late bool _isMyProfile;
-  final String _emptyPostMessage = "Chưa có bài viết nào.";
-  final String _emptySavedMessage = "Bạn chưa lưu bài viết nào!";
 
   File? _avatarImage;
   File? _coverImage;
 
   late TabController _tabController;
 
+  final String _emptyPostMessage = "Chưa có bài viết nào.";
+  final String _emptySavedMessage = "Bạn chưa lưu bài viết nào!";
+
   @override
   void initState() {
     super.initState();
+
     final uid = currentUser?.uid ?? '';
     _targetUserId = widget.userId ?? uid;
     _isMyProfile = (_targetUserId == uid);
+
     _tabController = TabController(length: _isMyProfile ? 2 : 1, vsync: this);
   }
 
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
+  // ---------------------- PICK AVATAR ----------------------
+  Future<void> _pickAvatar() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+    );
 
-  void _onPostSaved(bool isSaved) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).removeCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(isSaved ? "Bài viết đã được lưu!" : "Đã bỏ lưu bài viết."),
-          duration: const Duration(seconds: 2),
-          backgroundColor: Colors.grey[800],
-        ),
-      );
-      // If on the saved tab and a post is unsaved, refresh the list.
-      if (!isSaved && _tabController.index == 1) {
-        setState(() {});
-      }
+    if (picked == null) return;
+
+    final url = await AvatarUploadService.uploadAvatar(
+      picked.path,
+      currentUser!.uid,
+    );
+
+    if (url != null) {
+      await FirebaseFirestore.instance
+          .collection("users")
+          .doc(currentUser!.uid)
+          .update({"avatar": url});
+
+      setState(() => _avatarImage = File(picked.path));
     }
   }
 
-  Future<void> _addPost() async {
-    final result = await Navigator.push(
-        context, MaterialPageRoute(builder: (_) => const CreatePostScreen()));
-    if (result == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Bài viết mới đã được đăng!')));
+  // ---------------------- PICK COVER ----------------------
+  Future<void> _pickCover() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+    );
+
+    if (picked == null) return;
+
+    final url = await AvatarUploadService.uploadCover(
+      picked.path,
+      currentUser!.uid,
+    );
+
+    if (url != null) {
+      await FirebaseFirestore.instance
+          .collection("users")
+          .doc(currentUser!.uid)
+          .update({"cover": url});
+
+      setState(() => _coverImage = File(picked.path));
+    }
+  }
+
+  // ---------------------- SAVE POST ----------------------
+  void _onPostSaved(bool isSaved) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content:
+        Text(isSaved ? "Bài viết đã được lưu!" : "Đã bỏ lưu bài viết."),
+      ),
+    );
+
+    if (!isSaved && _isMyProfile && _tabController.index == 1) {
       setState(() {});
     }
   }
 
-  Future<void> _logout() async {
-    await FirebaseAuth.instance.signOut();
-    if (mounted) {
-      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
-    }
+  // ---------------------- ADD POST ----------------------
+  Future<void> _addPost() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const CreatePostScreen()),
+    );
+
+    if (result == true) setState(() {});
   }
 
+  // ---------------------- LOGOUT ----------------------
+  Future<void> _logout() async {
+    await FirebaseAuth.instance.signOut();
+    if (!mounted) return;
+
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+  }
+
+  // ---------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     if (currentUser == null) {
       return const Scaffold(
-          body: Center(child: Text("Vui lòng đăng nhập để xem profile.")));
-    }
-
-    if (_targetUserId.isEmpty) {
-      return const Scaffold(body: Center(child: Text("Không tìm thấy người dùng.")));
+        body: Center(child: Text("Vui lòng đăng nhập.")),
+      );
     }
 
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: const Color(0xFF1877F2),
-        elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.white),
         actions: _isMyProfile
             ? [
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, color: Colors.white),
-            onSelected: (value) {
-              if (value == 'logout') _logout();
+            icon: const Icon(Icons.more_vert, color: Colors.white), // ⭐ FIX
+            onSelected: (v) {
+              if (v == "logout") _logout();
             },
             itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'logout',
+              PopupMenuItem(
+                value: "logout",
                 child: Row(
-                  children: [
+                  children: const [
                     Icon(Icons.logout, color: Colors.red),
                     SizedBox(width: 8),
-                    Text('Đăng xuất'),
+                    Text(
+                      "Đăng xuất",
+                      style: TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -127,71 +178,110 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
             : null,
       ),
       body: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance.collection('users').doc(_targetUserId).snapshots(),
-        builder: (context, userSnapshot) {
-          if (userSnapshot.connectionState == ConnectionState.waiting) {
+        stream: FirebaseFirestore.instance
+            .collection("users")
+            .doc(_targetUserId)
+            .snapshots(),
+        builder: (context, snap) {
+          if (!snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          if (!userSnapshot.hasData || userSnapshot.data?.data() == null) {
-            return const Center(child: Text("Không thể tải dữ liệu người dùng."));
-          }
 
-          final userData = userSnapshot.data!.data()!;
-          final friendsCount = (userData['friends'] as List?)?.length ?? 0;
+          final userData = snap.data!.data()!;
+          final friendsCount = (userData["friends"] as List?)?.length ?? 0;
 
           return NestedScrollView(
-            headerSliverBuilder: (context, innerBoxIsScrolled) => [
+            headerSliverBuilder: (_, __) => [
               SliverToBoxAdapter(
                 child: Column(
                   children: [
+                    // --------------------- COVER ---------------------
                     ProfileCover(
-                        coverImage: _coverImage != null ? FileImage(_coverImage!) : null,
-                        isMyProfile: _isMyProfile,
-                        onPickCover: () {}
+                      coverImage: _coverImage != null
+                          ? FileImage(_coverImage!)
+                      as ImageProvider<Object>
+                          : (userData["cover"] != null
+                          ? NetworkImage(userData["cover"])
+                      as ImageProvider<Object>
+                          : null),
+                      isMyProfile: _isMyProfile,
+                      onPickCover: _pickCover,
                     ),
+
+                    // --------------------- AVATAR ---------------------
                     ProfileAvatar(
-                        avatarImage: _avatarImage != null ? FileImage(_avatarImage!) : null,
-                        isMyProfile: _isMyProfile,
-                        onPickAvatar: () {}
+                      avatarImage: _avatarImage != null
+                          ? FileImage(_avatarImage!)
+                      as ImageProvider<Object>
+                          : (userData["avatar"] != null
+                          ? NetworkImage(userData["avatar"])
+                      as ImageProvider<Object>
+                          : null),
+                      isMyProfile: _isMyProfile,
+                      onPickAvatar: _pickAvatar,
                     ),
+
+                    // --------------------- INFO ---------------------
                     ProfileInfo(
-                        displayName: userData['displayName'] ?? 'Người dùng',
-                        bio: userData['bio'] ?? 'Chưa có thông tin giới thiệu',
-                        friendsCount: friendsCount,
-                        onFriendsTap: () {
-                          if (friendsCount > 0) {
-                            Navigator.push(context, MaterialPageRoute(builder: (_) => FriendsScreen(userId: _targetUserId)));
-                          }
+                      displayName:
+                      userData["displayName"] ?? "Người dùng",
+                      bio: userData["bio"] ?? "Chưa có mô tả",
+                      friendsCount: friendsCount,
+                      onFriendsTap: () {
+                        if (friendsCount > 0) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) =>
+                                    FriendsScreen(userId: _targetUserId)),
+                          );
                         }
+                      },
                     ),
-                    const SizedBox(height: 20),
+
+                    const SizedBox(height: 15),
+
+                    // --------------------- BUTTONS ---------------------
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: _isMyProfile
                           ? Row(
                         children: [
-                          Expanded(child: AddPostButton(onAddPost: _addPost)),
+                          Expanded(
+                            child: AddPostButton(onAddPost: _addPost),
+                          ),
                           const SizedBox(width: 10),
-                          Expanded(child: ActionButton(isMyProfile: true, targetUserId: _targetUserId)),
+                          Expanded(
+                            child: ActionButton(
+                              isMyProfile: true,
+                              targetUserId: _targetUserId,
+                            ),
+                          ),
                         ],
                       )
-                          : ActionButton(isMyProfile: false, targetUserId: _targetUserId),
+                          : ActionButton(
+                        isMyProfile: false,
+                        targetUserId: _targetUserId,
+                      ),
                     ),
-                    const SizedBox(height: 20),
+
+                    const SizedBox(height: 15),
+
+                    // --------------------- TAB BAR ---------------------
                     if (_isMyProfile)
                       TabBar(
                         controller: _tabController,
                         tabs: const [
-                          Tab(text: 'Bài viết'),
-                          Tab(text: 'Đã lưu'),
+                          Tab(text: "Bài viết"),
+                          Tab(text: "Đã lưu"),
                         ],
                         labelColor: Colors.black,
-                        unselectedLabelColor: Colors.grey,
                       ),
                   ],
                 ),
-              ),
+              )
             ],
+            // --------------------- TAB VIEW ---------------------
             body: _isMyProfile
                 ? TabBarView(
               controller: _tabController,
@@ -207,65 +297,57 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
     );
   }
 
+  // --------------------- POSTS ---------------------
   Widget _buildPostsView() {
     return StreamBuilder<QuerySnapshot>(
       stream: _postService.getUserPostsStream(_targetUserId),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return const Center(child: Text("Lỗi khi tải bài viết."));
-        }
-
-        if (snapshot.connectionState == ConnectionState.waiting) {
+      builder: (context, snap) {
+        if (!snap.hasData)
           return const Center(child: CircularProgressIndicator());
-        }
 
-        final docs = snapshot.data?.docs ?? [];
-        final posts = docs.map((doc) => Post.fromFirestore(doc)).where((post) => !post.isDeleted && post.content.trim().isNotEmpty).toList();
+        final posts = snap.data!.docs
+            .map((e) => Post.fromFirestore(e))
+            .where((e) => !e.isDeleted && e.content.isNotEmpty)
+            .toList();
 
-        if (posts.isEmpty) {
-          return Center(child: Text(_emptyPostMessage, style: const TextStyle(fontSize: 16, color: Colors.grey)));
-        }
+        if (posts.isEmpty)
+          return Center(child: Text(_emptyPostMessage));
 
         return ListView.builder(
-          padding: const EdgeInsets.all(8.0),
           itemCount: posts.length,
-          itemBuilder: (context, index) {
-            final post = posts[index];
-            return PostCard(post: post, onPostSaved: _onPostSaved, source: 'profile');
-          },
+          itemBuilder: (_, i) => PostCard(
+            post: posts[i],
+            onPostSaved: _onPostSaved,
+            source: "profile",
+          ),
         );
       },
     );
   }
 
+  // --------------------- SAVED POSTS ---------------------
   Widget _buildSavedPostsView() {
     return StreamBuilder<QuerySnapshot>(
       stream: _postService.getSavedPostsStream(currentUser!.uid),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(child: Text("Lỗi khi tải bài viết đã lưu: ${snapshot.error}"));
-        }
-
-        if (snapshot.connectionState == ConnectionState.waiting) {
+      builder: (context, snap) {
+        if (!snap.hasData)
           return const Center(child: CircularProgressIndicator());
-        }
 
-        final docs = snapshot.data?.docs ?? [];
-        final posts = docs.map((doc) => Post.fromFirestore(doc)).where((post) => !post.isDeleted && post.content.trim().isNotEmpty).toList();
+        final posts = snap.data!.docs
+            .map((e) => Post.fromFirestore(e))
+            .where((e) => !e.isDeleted && e.content.isNotEmpty)
+            .toList();
 
-        if (posts.isEmpty) {
-          return Center(child: Text(_emptySavedMessage, style: const TextStyle(fontSize: 16, color: Colors.grey)));
-        }
-        
-        posts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+        if (posts.isEmpty)
+          return Center(child: Text(_emptySavedMessage));
 
         return ListView.builder(
-          padding: const EdgeInsets.all(8.0),
           itemCount: posts.length,
-          itemBuilder: (context, index) {
-            final post = posts[index];
-            return PostCard(post: post, onPostSaved: _onPostSaved, source: 'profile');
-          },
+          itemBuilder: (_, i) => PostCard(
+            post: posts[i],
+            onPostSaved: _onPostSaved,
+            source: "profile",
+          ),
         );
       },
     );

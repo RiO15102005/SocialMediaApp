@@ -7,7 +7,7 @@ import '../services/chat_service.dart';
 
 class AddMemberScreen extends StatefulWidget {
   final String groupId;
-  final List<dynamic> currentMembers; // Danh sách ID hiện tại để lọc
+  final List<String> currentMembers; // Danh sách thành viên hiện tại để loại trừ
 
   const AddMemberScreen({
     super.key,
@@ -25,20 +25,27 @@ class _AddMemberScreenState extends State<AddMemberScreen> {
   final List<String> _selectedUserIds = [];
   bool _isLoading = false;
 
-  Future<void> _submit() async {
+  Future<void> _addMembers() async {
     if (_selectedUserIds.isEmpty) return;
+
     setState(() => _isLoading = true);
 
     try {
+      // Hàm này trong ChatService đã bao gồm logic gửi thông báo hệ thống
       await _chatService.addMembersToGroup(widget.groupId, _selectedUserIds);
+
       if (mounted) {
-        Navigator.pop(context); // Quay lại màn hình thông tin nhóm
+        Navigator.pop(context); // Quay lại trang Info
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Đã thêm thành viên mới")),
+          const SnackBar(content: Text("Đã thêm thành viên vào nhóm")),
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Lỗi: $e")));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Lỗi: $e")),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -53,8 +60,10 @@ class _AddMemberScreenState extends State<AddMemberScreen> {
         foregroundColor: Colors.white,
         actions: [
           TextButton(
-            onPressed: _isLoading ? null : _submit,
-            child: const Text("Xong", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            onPressed: (_isLoading || _selectedUserIds.isEmpty) ? null : _addMembers,
+            child: _isLoading
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : const Text("THÊM", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           )
         ],
       ),
@@ -64,38 +73,47 @@ class _AddMemberScreenState extends State<AddMemberScreen> {
           if (!userSnap.hasData) return const Center(child: CircularProgressIndicator());
 
           final userData = userSnap.data!.data() as Map<String, dynamic>? ?? {};
-          final List<dynamic> allFriends = userData['friends'] ?? [];
+          final List<dynamic> friendIds = userData['friends'] ?? [];
 
-          // Lọc ra những bạn bè CHƯA có trong nhóm
-          final potentialMembers = allFriends.where((fid) => !widget.currentMembers.contains(fid)).toList();
+          if (friendIds.isEmpty) {
+            return const Center(child: Text("Bạn không có bạn bè nào để thêm."));
+          }
 
-          if (potentialMembers.isEmpty) {
-            return const Center(child: Text("Không còn bạn bè nào để thêm."));
+          // Lọc ra những người chưa có trong nhóm
+          final availableFriends = friendIds.where((fid) => !widget.currentMembers.contains(fid)).toList();
+
+          if (availableFriends.isEmpty) {
+            return const Center(child: Text("Tất cả bạn bè đã ở trong nhóm."));
           }
 
           return ListView.builder(
-            itemCount: potentialMembers.length,
+            itemCount: availableFriends.length,
             itemBuilder: (context, index) {
-              final friendId = potentialMembers[index];
+              final friendId = availableFriends[index];
 
               return FutureBuilder<DocumentSnapshot>(
                 future: FirebaseFirestore.instance.collection('users').doc(friendId).get(),
                 builder: (context, friendSnap) {
                   if (!friendSnap.hasData) return const SizedBox();
-                  final data = friendSnap.data!.data() as Map<String, dynamic>;
-                  final name = data['displayName'] ?? 'No Name';
-                  final avatar = data['photoURL'];
+                  final friendData = friendSnap.data!.data() as Map<String, dynamic>?;
+                  if (friendData == null) return const SizedBox();
 
+                  final name = friendData['displayName'] ?? 'Không tên';
+                  final avatar = friendData['photoURL'];
                   final isSelected = _selectedUserIds.contains(friendId);
 
                   return CheckboxListTile(
                     value: isSelected,
                     activeColor: const Color(0xFF1877F2),
-                    title: Text(name),
                     secondary: CircleAvatar(
-                      backgroundImage: (avatar != null && avatar.isNotEmpty) ? NetworkImage(avatar) : null,
-                      child: (avatar == null || avatar.isEmpty) ? const Icon(Icons.person) : null,
+                      backgroundImage: (avatar != null && avatar.isNotEmpty)
+                          ? NetworkImage(avatar)
+                          : null,
+                      child: (avatar == null || avatar.isEmpty)
+                          ? const Icon(Icons.person)
+                          : null,
                     ),
+                    title: Text(name),
                     onChanged: (val) {
                       setState(() {
                         if (val == true) {

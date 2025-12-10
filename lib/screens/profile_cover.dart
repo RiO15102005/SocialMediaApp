@@ -1,13 +1,14 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 
 class ProfileCover extends StatelessWidget {
-  final ImageProvider? coverImage;
+  final ImageProvider<Object>? coverImage;
   final bool isMyProfile;
   final VoidCallback? onPickCover;
 
   const ProfileCover({
     super.key,
-    this.coverImage,
+    required this.coverImage,
     required this.isMyProfile,
     this.onPickCover,
   });
@@ -15,28 +16,31 @@ class ProfileCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Stack(
-      alignment: Alignment.center,
+      alignment: Alignment.bottomRight,
       children: [
         Container(
-          height: 160, // giảm chiều cao để thu gọn theo chiều dọc
+          height: 180,
           width: double.infinity,
-          decoration: BoxDecoration(
-            color: Colors.grey[300],
-            image: coverImage != null
-                ? DecorationImage(image: coverImage!, fit: BoxFit.cover)
-                : null,
-          ),
+          color: Colors.grey[300],
+          child: coverImage != null
+              ? Image(
+            image: coverImage!,
+            fit: BoxFit.cover,
+          )
+              : const Icon(Icons.image, size: 80, color: Colors.white),
         ),
+
         if (isMyProfile)
           Positioned(
             bottom: 10,
             right: 10,
             child: CircleAvatar(
-              backgroundColor: Colors.white,
+              radius: 22,
+              backgroundColor: const Color(0xFF1877F2),
               child: IconButton(
-                icon: const Icon(Icons.camera_alt, color: Colors.black),
+                padding: EdgeInsets.zero,
+                icon: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
                 onPressed: onPickCover,
-                tooltip: 'Đổi ảnh bìa',
               ),
             ),
           ),

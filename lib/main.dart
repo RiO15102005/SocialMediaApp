@@ -1,13 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // ⭐ Thêm Supabase
 import 'firebase_options.dart';
 import 'auth_gate.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // ⭐ Firebase init
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // ⭐ Supabase init
+  await Supabase.initialize(
+    url: 'https://okxqoqoosfyljmnmitif.supabase.co',      // Thay bằng Project URL
+    anonKey: 'sb_publishable_sxoTBmL23HrUaYA6Nrbx_Q_alsyRlja',             // Thay bằng anon key
+  );
+
   runApp(const MyApp());
 }
 
