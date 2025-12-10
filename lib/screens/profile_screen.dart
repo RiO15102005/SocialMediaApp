@@ -29,8 +29,8 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
   final UserService _userService = UserService();
   late String _targetUserId;
   late bool _isMyProfile;
-  final String _emptyPostMessage = "This place is quiet... Let's break the silence!";
-  final String _emptySavedMessage = "You haven't saved any posts yet!";
+  final String _emptyPostMessage = "Chưa có bài viết nào.";
+  final String _emptySavedMessage = "Bạn chưa lưu bài viết nào!";
 
   File? _avatarImage;
   File? _coverImage;
@@ -220,7 +220,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
         }
 
         final docs = snapshot.data?.docs ?? [];
-        final posts = docs.map((doc) => Post.fromFirestore(doc)).toList();
+        final posts = docs.map((doc) => Post.fromFirestore(doc)).where((post) => !post.isDeleted && post.content.trim().isNotEmpty).toList();
 
         if (posts.isEmpty) {
           return Center(child: Text(_emptyPostMessage, style: const TextStyle(fontSize: 16, color: Colors.grey)));
@@ -251,12 +251,12 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
         }
 
         final docs = snapshot.data?.docs ?? [];
-        if (docs.isEmpty) {
+        final posts = docs.map((doc) => Post.fromFirestore(doc)).where((post) => !post.isDeleted && post.content.trim().isNotEmpty).toList();
+
+        if (posts.isEmpty) {
           return Center(child: Text(_emptySavedMessage, style: const TextStyle(fontSize: 16, color: Colors.grey)));
         }
-
-        // Sort posts on the client-side
-        final posts = docs.map((doc) => Post.fromFirestore(doc)).toList();
+        
         posts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
         return ListView.builder(

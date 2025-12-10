@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/post_service.dart';
 import '../models/post_model.dart';
 import '../services/chat_service.dart';
 import '../services/user_service.dart';
@@ -15,6 +16,7 @@ class SharePostScreen extends StatefulWidget {
 class _SharePostScreenState extends State<SharePostScreen> {
   final _chatService = ChatService();
   final _userService = UserService();
+  final _postService = PostService();
   final _messageController = TextEditingController();
   List<String> _selectedRecipients = [];
   late Future<List<Map<String, String>>> _friendsFuture;
@@ -47,7 +49,9 @@ class _SharePostScreenState extends State<SharePostScreen> {
       message: _messageController.text,
     );
 
-    Navigator.of(context).pop();
+    _postService.incrementShare(widget.post.postId);
+
+    Navigator.of(context).pop(true);
   }
 
   @override
@@ -57,12 +61,12 @@ class _SharePostScreenState extends State<SharePostScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('Share Post', style: Theme.of(context).textTheme.titleLarge),
+          Text('Chia sẻ bài viết', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 16.0),
           TextField(
             controller: _messageController,
             decoration: const InputDecoration(
-              hintText: 'Add a message...',
+              hintText: 'Thêm tin nhắn...',
               border: OutlineInputBorder(),
             ),
           ),
@@ -76,7 +80,7 @@ class _SharePostScreenState extends State<SharePostScreen> {
                 }
 
                 if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                  return const Center(child: Text('No friends to show.'));
+                  return const Center(child: Text('Không có bạn bè để hiển thị.'));
                 }
 
                 final friends = snapshot.data!;
@@ -99,7 +103,7 @@ class _SharePostScreenState extends State<SharePostScreen> {
           ),
           ElevatedButton(
             onPressed: _sendSharedPost,
-            child: const Text('Send'),
+            child: const Text('Gửi'),
           ),
         ],
       ),

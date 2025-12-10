@@ -21,7 +21,7 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
       ScaffoldMessenger.of(context).removeCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(isSaved ? "Post saved" : "Post unsaved"),
+          content: Text(isSaved ? "Bài viết đã được lưu" : "Đã bỏ lưu bài viết"),
           duration: const Duration(seconds: 2),
           backgroundColor: Colors.grey[800],
         ),
@@ -37,14 +37,14 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
   Widget build(BuildContext context) {
     if (currentUser == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Saved Posts')),
-        body: const Center(child: Text('Please log in to see your saved posts.')),
+        appBar: AppBar(title: const Text('Bài viết đã lưu')),
+        body: const Center(child: Text('Vui lòng đăng nhập để xem các bài viết đã lưu của bạn.')),
       );
     }
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Saved Posts'),
+        title: const Text('Bài viết đã lưu'),
       ),
       body: StreamBuilder<QuerySnapshot>(
         stream: _postService.getSavedPostsStream(currentUser!.uid),
@@ -53,10 +53,10 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
+            return Center(child: Text('Lỗi: ${snapshot.error}'));
           }
           if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(child: Text('You have no saved posts.'));
+            return const Center(child: Text('Bạn chưa lưu bài viết nào.'));
           }
 
           final posts = snapshot.data!.docs.map((doc) => Post.fromFirestore(doc)).toList();

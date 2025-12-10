@@ -24,6 +24,7 @@ class PostService {
       "likes": [],
       "savers": [],
       "commentsCount": 0,
+      "shares": 0,
       "timestamp": Timestamp.now(),
       "isHidden": false,
       "isDeleted": false,
@@ -123,6 +124,11 @@ class PostService {
     } else {
       await postRef.update({"savers": FieldValue.arrayUnion([user.uid])});
     }
+  }
+
+  Future<void> incrementShare(String postId) async {
+    final postRef = _firestore.collection(postCol).doc(postId);
+    await postRef.update({'shares': FieldValue.increment(1)});
   }
 
   Future<void> deletePost(String postId) async {

@@ -58,7 +58,7 @@ class ChatBubble extends StatelessWidget {
     this.sharedPostContent,
     this.sharedPostUserName,
     this.onSharedPostTap,
-  })  : message = 'Shared a post',
+  })  : message = 'Đã chia sẻ một bài viết',
         isSharedPost = true,
         super(key: key);
 
@@ -112,7 +112,7 @@ class ChatBubble extends StatelessWidget {
           );
         },
         child: Column(
-          crossAxisAlignment:
+          crossAxisAlignment: 
               isCurrentUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             if (replyToMessage != null && replyToMessage!.isNotEmpty)
@@ -156,9 +156,9 @@ class ChatBubble extends StatelessWidget {
                             color: isCurrentUser ? Colors.white : Colors.black,
                           ),
                           children: [
-                            const TextSpan(text: 'Shared a post by '),
+                            const TextSpan(text: 'Đã chia sẻ một bài viết của '),
                             TextSpan(
-                              text: sharedPostUserName ?? 'User',
+                              text: sharedPostUserName ?? 'Người dùng',
                               style: const TextStyle(fontWeight: FontWeight.bold),
                             ),
                             const TextSpan(text: ': '),

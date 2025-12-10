@@ -71,7 +71,7 @@ class _CommentScreenState extends State<CommentScreen> {
       ScaffoldMessenger.of(context).removeCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(isSaved ? "Post saved" : "Post unsaved"),
+          content: Text(isSaved ? "Đã lưu bài viết" : "Đã bỏ lưu bài viết"),
           duration: const Duration(seconds: 2),
         ),
       );

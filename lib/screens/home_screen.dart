@@ -21,7 +21,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final User? currentUser = FirebaseAuth.instance.currentUser;
 
   late Future<List<String>> _friendsListFuture;
-  final String _emptyMessage = "This place is quiet... Let's break the silence!";
+  final String _emptyMessage = "Nơi này thật yên tĩnh... Hãy phá vỡ sự im lặng này!";
 
   // State for managing inline undo actions
   final Map<String, String> _pendingActions = {}; // postId -> 'hide' or 'delete'
@@ -106,7 +106,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ScaffoldMessenger.of(context).removeCurrentSnackBar();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(isSaved ? "Post saved" : "Post unsaved"),
+          content: Text(isSaved ? "Đã lưu bài viết" : "Đã bỏ lưu bài viết"),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -116,16 +116,16 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildUndoBanner(String message, VoidCallback onUndo) {
     return Container(
       key: UniqueKey(),
-      color: Colors.grey[800],
+      color: const Color(0xFFF0F2F5),
       margin: const EdgeInsets.symmetric(vertical: 4),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(message, style: const TextStyle(color: Colors.white)),
+          Text(message, style: const TextStyle(color: Colors.black87)),
           TextButton(
             onPressed: onUndo,
-            child: const Text('Undo', style: TextStyle(color: Colors.blueAccent)),
+            child: const Text('Hoàn tác', style: TextStyle(color: Colors.blueAccent)),
           ),
         ], 
       ),

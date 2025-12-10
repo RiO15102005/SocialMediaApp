@@ -12,7 +12,7 @@ class PostDetailScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Post Detail'),
+        title: const Text('Chi tiết bài viết'),
       ),
       body: FutureBuilder<DocumentSnapshot>(
         future: FirebaseFirestore.instance.collection('POST').doc(postId).get(),
@@ -22,7 +22,7 @@ class PostDetailScreen extends StatelessWidget {
           }
 
           if (!snapshot.hasData || !snapshot.data!.exists) {
-            return const Center(child: Text('Post not found.'));
+            return const Center(child: Text('Không tìm thấy bài viết.'));
           }
 
           final post = Post.fromFirestore(snapshot.data!);

@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'dart:math' as math;
 import '../models/post_model.dart';
+import '../screens/likes_screen.dart';
 import '../services/post_service.dart';
 import '../screens/comment_screen.dart';
 import '../screens/share_post_screen.dart';
@@ -98,13 +99,33 @@ class _PostCardState extends State<PostCard> {
     );
   }
 
-  void _openShareSheet() {
-    showModalBottomSheet(
+  void _openShareSheet() async {
+    final result = await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (context) => FractionallySizedBox(
         heightFactor: 0.7,
         child: SharePostScreen(post: widget.post),
+      ),
+    );
+
+    if (result == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Bạn đã chia sẻ bài viết này.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  void _showLikes() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => FractionallySizedBox(
+        heightFactor: 0.7,
+        child: LikesScreen(userIds: widget.post.likes),
       ),
     );
   }
@@ -241,6 +262,11 @@ class _PostCardState extends State<PostCard> {
                 icon: const Icon(Icons.near_me_outlined, color: Colors.grey),
                 onPressed: _openShareSheet,
               ),
+              if (widget.post.shares > 0)
+                Text(
+                  '${widget.post.shares}',
+                  style: const TextStyle(color: Colors.grey),
+                ),
               const Spacer(),
               IconButton(
                 icon: Icon(
@@ -253,11 +279,14 @@ class _PostCardState extends State<PostCard> {
             ],
           ),
           if (isLiked && likeCount > 1)
-            Padding(
-              padding: const EdgeInsets.only(left: 12.0, top: 4.0),
-              child: Text(
-                'Liked by you and ${likeCount - 1} other${likeCount - 1 > 1 ? "s" : ""}',
-                style: const TextStyle(color: Colors.grey),
+            GestureDetector(
+              onTap: _showLikes,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 12.0, top: 4.0),
+                child: Text(
+                  '${isLiked ? 'Bạn và ' : ''}${likeCount - 1} người khác đã thích',
+                  style: const TextStyle(color: Colors.grey),
+                ),
               ),
             ),
           const SizedBox(height: 8),
