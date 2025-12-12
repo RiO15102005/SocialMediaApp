@@ -37,7 +37,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
-  // ⭐ ĐÃ SỬA: Dùng getLastMessageStream (chỉ lấy 1 tin thay vì toàn bộ)
   Stream<String> lastVisibleMessageStream(String roomId) {
     return _chatService.getLastMessageStream(roomId).map((snap) {
       if (snap.docs.isEmpty) return "Chưa có tin nhắn";
@@ -45,11 +44,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
       final data = snap.docs.first.data() as Map<String, dynamic>;
       final deletedFor = List<String>.from(data["deletedFor"] ?? []);
 
-      // Nếu mình đã xóa tin nhắn này phía mình
       if (deletedFor.contains(uid)) return "Tin nhắn đã xóa";
 
       if (data["isRecalled"] == true) {
-        return "Tin nhắn đã được thu hồi •";
+        return "Tin nhắn đã được thu hồi";
       } else if (data['type'] == 'image') {
         return "📷 [Hình ảnh]";
       } else if (data['type'] == 'shared_post') {
@@ -67,13 +65,24 @@ class _ChatListScreenState extends State<ChatListScreen> {
     });
   }
 
-  bool isUnread(Map<String, dynamic> data) {
+  bool isUnread(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+
+    if (data['lastSenderId'] == uid) return false;
+    if (doc.metadata.hasPendingWrites) return false;
+
     final updated = data["updatedAt"];
     if (updated == null) return false;
+
     final lastReadMap = data["lastReadTime"] as Map<String, dynamic>?;
     final lastRead = lastReadMap?[uid] as Timestamp?;
+
     if (lastRead == null) return true;
-    return (updated as Timestamp).toDate().isAfter(lastRead.toDate());
+
+    final Timestamp? updatedTs = (updated is Timestamp) ? updated : null;
+    if (updatedTs == null) return false;
+
+    return updatedTs.millisecondsSinceEpoch > lastRead.millisecondsSinceEpoch;
   }
 
   void showDeleteDialog(BuildContext context, String roomId, String name) {
@@ -96,7 +105,16 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
-  // --- 1. Widget hiển thị danh sách Chat đang có ---
+  // ⭐ Widget đường kẻ phân cách (Indent = 72: chuẩn Material cho Avatar + Text)
+  Widget _buildDivider() {
+    return const Divider(
+      height: 1,
+      thickness: 0.5,
+      indent: 72, // Đẩy vào 72px để tránh Avatar
+      color: Color(0xFFEEEEEE), // Màu xám nhạt tinh tế
+    );
+  }
+
   Widget _buildActiveChatList({bool shrinkWrap = false}) {
     return StreamBuilder<QuerySnapshot>(
       stream: _chatService.chatRoomsStream(),
@@ -123,41 +141,45 @@ class _ChatListScreenState extends State<ChatListScreen> {
             }
 
             final isGroup = data["isGroup"] == true;
-            final unread = isUnread(data);
+            final unread = isUnread(room);
 
             return StreamBuilder<String>(
               stream: lastVisibleMessageStream(roomId),
               builder: (context, lastSnap) {
                 final lastMsg = lastSnap.data ?? "";
 
-                // --- NHÓM ---
                 if (isGroup) {
                   final name = data["groupName"] ?? "Nhóm";
                   if (_search.isNotEmpty && !name.toLowerCase().contains(_search)) {
                     return const SizedBox.shrink();
                   }
 
-                  return ListTile(
-                    leading: const CircleAvatar(
-                      backgroundColor: Colors.blue,
-                      child: Icon(Icons.groups, color: Colors.white),
-                    ),
-                    title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text(
-                      lastMsg, maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: unread ? Colors.black : Colors.grey,
-                        fontWeight: unread ? FontWeight.bold : FontWeight.normal,
+                  // ⭐ Wrap ListTile trong Column để thêm Divider
+                  return Column(
+                    children: [
+                      ListTile(
+                        leading: const CircleAvatar(
+                          backgroundColor: Colors.blue,
+                          child: Icon(Icons.groups, color: Colors.white),
+                        ),
+                        title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text(
+                          lastMsg, maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: unread ? Colors.black : Colors.grey,
+                            fontWeight: unread ? FontWeight.bold : FontWeight.normal,
+                          ),
+                        ),
+                        onLongPress: () => showDeleteDialog(context, roomId, name),
+                        onTap: () {
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(receiverId: roomId, receiverName: name, isGroup: true)));
+                        },
                       ),
-                    ),
-                    onLongPress: () => showDeleteDialog(context, roomId, name),
-                    onTap: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(receiverId: roomId, receiverName: name, isGroup: true)));
-                    },
+                      _buildDivider(), // Thêm dòng kẻ
+                    ],
                   );
                 }
 
-                // --- 1-1 ---
                 final participants = List.from(data["participants"] ?? []);
                 final otherId = participants.firstWhere((x) => x != uid, orElse: () => "");
                 if (otherId.isEmpty) return const SizedBox.shrink();
@@ -179,24 +201,30 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       }
                     }
 
-                    return ListTile(
-                      leading: GestureDetector(
-                        onTap: () => _navigateToProfile(context, otherId),
-                        child: CircleAvatar(
-                          backgroundImage: (avatar != null && avatar.isNotEmpty) ? NetworkImage(avatar) : null,
-                          child: (avatar == null || avatar.isEmpty) ? const Icon(Icons.person) : null,
+                    // ⭐ Wrap ListTile trong Column để thêm Divider
+                    return Column(
+                      children: [
+                        ListTile(
+                          leading: GestureDetector(
+                            onTap: () => _navigateToProfile(context, otherId),
+                            child: CircleAvatar(
+                              backgroundImage: (avatar != null && avatar.isNotEmpty) ? NetworkImage(avatar) : null,
+                              child: (avatar == null || avatar.isEmpty) ? const Icon(Icons.person) : null,
+                            ),
+                          ),
+                          title: Text(name, style: TextStyle(fontWeight: unread ? FontWeight.bold : FontWeight.w600)),
+                          subtitle: Text(
+                            lastMsg.isEmpty ? "Tin nhắn đã xóa" : lastMsg,
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: unread ? Colors.black87 : Colors.grey, fontWeight: unread ? FontWeight.bold : FontWeight.normal),
+                          ),
+                          onLongPress: () => showDeleteDialog(context, roomId, name),
+                          onTap: () {
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(receiverId: otherId, receiverName: name, receiverAvatar: avatar, isGroup: false)));
+                          },
                         ),
-                      ),
-                      title: Text(name, style: TextStyle(fontWeight: unread ? FontWeight.bold : FontWeight.w600)),
-                      subtitle: Text(
-                        lastMsg.isEmpty ? "Tin nhắn đã xóa" : lastMsg,
-                        maxLines: 1, overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: unread ? Colors.black87 : Colors.grey, fontWeight: unread ? FontWeight.bold : FontWeight.normal),
-                      ),
-                      onLongPress: () => showDeleteDialog(context, roomId, name),
-                      onTap: () {
-                        Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(receiverId: otherId, receiverName: name, receiverAvatar: avatar, isGroup: false)));
-                      },
+                        _buildDivider(), // Thêm dòng kẻ
+                      ],
                     );
                   },
                 );
@@ -208,7 +236,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
-  // --- 2. Widget Gợi ý từ danh sách bạn bè ---
   Widget _buildFriendSuggestions() {
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
@@ -256,27 +283,33 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 final avatar = userData['photoURL'];
                 final userId = userDoc.id;
 
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundImage: (avatar != null && avatar.isNotEmpty) ? NetworkImage(avatar) : null,
-                    child: (avatar == null || avatar.isEmpty) ? const Icon(Icons.person) : null,
-                  ),
-                  title: Text(name),
-                  subtitle: Text(email, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                  trailing: const Icon(Icons.message, color: Color(0xFF1877F2)),
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => ChatScreen(
-                          receiverId: userId,
-                          receiverName: name,
-                          receiverAvatar: avatar,
-                          isGroup: false,
-                        ),
+                // ⭐ Wrap ListTile trong Column để thêm Divider
+                return Column(
+                  children: [
+                    ListTile(
+                      leading: CircleAvatar(
+                        backgroundImage: (avatar != null && avatar.isNotEmpty) ? NetworkImage(avatar) : null,
+                        child: (avatar == null || avatar.isEmpty) ? const Icon(Icons.person) : null,
                       ),
-                    );
-                  },
+                      title: Text(name),
+                      subtitle: Text(email, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                      trailing: const Icon(Icons.message, color: Color(0xFF1877F2)),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ChatScreen(
+                              receiverId: userId,
+                              receiverName: name,
+                              receiverAvatar: avatar,
+                              isGroup: false,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    _buildDivider(), // Thêm dòng kẻ
+                  ],
                 );
               },
             );

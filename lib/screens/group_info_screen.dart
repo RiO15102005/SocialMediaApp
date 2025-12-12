@@ -123,7 +123,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
 
           final groupData = snapshot.data!.data() as Map<String, dynamic>;
 
-          // ⭐ SỬA LỖI Ở ĐÂY: Chuyển List<dynamic> thành List<String>
+          // ⭐ SỬA LỖI Ở ĐÂY: Dùng List<String>.from để chuyển đổi kiểu dữ liệu
           final List<String> participants = List<String>.from(groupData['participants'] ?? []);
 
           final String adminId = groupData['adminId'] ?? '';

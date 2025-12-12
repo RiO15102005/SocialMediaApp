@@ -20,24 +20,24 @@ class ChatService {
         .snapshots();
   }
 
-  // Stream tin nhắn (Lấy tất cả - Dùng cho ChatScreen)
+  // ⭐ SỬA: Sắp xếp giảm dần (Mới nhất lên đầu danh sách để dùng reverse: true)
   Stream<QuerySnapshot> getMessages(String roomId) {
     return _firestore
         .collection('chat_rooms')
         .doc(roomId)
         .collection('messages')
-        .orderBy('timestamp', descending: false)
+        .orderBy('timestamp', descending: true) // ĐỔI THÀNH TRUE
         .snapshots();
   }
 
-  // ⭐ MỚI: Stream chỉ lấy tin nhắn cuối cùng (Tối ưu cho ChatListScreen)
+  // Stream tin nhắn cuối cùng (Dùng cho ChatList)
   Stream<QuerySnapshot> getLastMessageStream(String roomId) {
     return _firestore
         .collection('chat_rooms')
         .doc(roomId)
         .collection('messages')
-        .orderBy('timestamp', descending: true) // Mới nhất trước
-        .limit(1) // Chỉ lấy 1
+        .orderBy('timestamp', descending: true)
+        .limit(1)
         .snapshots();
   }
 
@@ -46,7 +46,7 @@ class ChatService {
       {bool isGroup = false, String? replyToMessage, String? replyToName}) async {
     final uid = _auth.currentUser!.uid;
     final roomId = isGroup ? receiverId : getChatRoomId(uid, receiverId);
-    final timestamp = Timestamp.now();
+    final timestamp = FieldValue.serverTimestamp();
 
     await _firestore.collection("chat_rooms").doc(roomId).collection("messages").add({
       "senderId": uid,
@@ -76,10 +76,11 @@ class ChatService {
       {bool isGroup = false, String? replyToMessage, String? replyToName}) async {
     final uid = _auth.currentUser!.uid;
     final roomId = isGroup ? receiverId : getChatRoomId(uid, receiverId);
-    final timestamp = Timestamp.now();
+    final timestamp = FieldValue.serverTimestamp();
+    final fileTimestamp = DateTime.now().millisecondsSinceEpoch;
 
     try {
-      String fileName = "${timestamp.millisecondsSinceEpoch}.jpg";
+      String fileName = "$fileTimestamp.jpg";
       Reference ref = _storage.ref().child('chat_images').child(roomId).child(fileName);
       UploadTask uploadTask = ref.putFile(imageFile);
       TaskSnapshot snapshot = await uploadTask;
@@ -114,11 +115,12 @@ class ChatService {
 
   // Gửi tin nhắn hệ thống
   Future<void> _sendSystemMessage(String groupId, String message) async {
+    final timestamp = FieldValue.serverTimestamp();
     await _firestore.collection("chat_rooms").doc(groupId).collection("messages").add({
       "senderId": "system",
       "message": message,
       "type": "system",
-      "timestamp": Timestamp.now(),
+      "timestamp": timestamp,
       "readBy": [],
       "reactions": {},
       "likedBy": [],
@@ -128,14 +130,13 @@ class ChatService {
 
     await _firestore.collection("chat_rooms").doc(groupId).set({
       "lastMessage": message,
-      "updatedAt": FieldValue.serverTimestamp(),
+      "updatedAt": timestamp,
     }, SetOptions(merge: true));
   }
 
   // Đánh dấu đã đọc
   Future<void> markMessagesAsRead(String roomId) async {
     final uid = _auth.currentUser!.uid;
-    // Lấy 20 tin nhắn mới nhất để check read (tối ưu)
     final snap = await _firestore.collection("chat_rooms").doc(roomId).collection("messages").orderBy("timestamp", descending: true).limit(20).get();
     WriteBatch batch = _firestore.batch();
     bool hasUpdate = false;
@@ -151,7 +152,6 @@ class ChatService {
     await _firestore.collection("chat_rooms").doc(roomId).set({"lastReadTime": {uid: FieldValue.serverTimestamp()}}, SetOptions(merge: true));
   }
 
-  // Các hàm tiện ích khác
   Future<void> hideChatRoom(String roomId) async {
     final uid = _auth.currentUser!.uid;
     final snap = await _firestore.collection("chat_rooms").doc(roomId).collection("messages").get();
@@ -174,7 +174,7 @@ class ChatService {
 
   Future<void> recallMessage(String roomId, String msgId) async {
     await _firestore.collection("chat_rooms").doc(roomId).collection("messages").doc(msgId).update({
-      "isRecalled": true, "message": "Tin nhắn đã được thu hồi •", "type": "text", "reactions": {}, "likedBy": []
+      "isRecalled": true, "message": "Tin nhắn đã được thu hồi", "type": "text", "reactions": {}, "likedBy": []
     });
     await _firestore.collection("chat_rooms").doc(roomId).set({"updatedAt": FieldValue.serverTimestamp()}, SetOptions(merge: true));
   }
@@ -246,18 +246,20 @@ class ChatService {
       final recipientDoc = await _firestore.collection('chat_rooms').doc(recipientId).get();
       final bool isGroup = recipientDoc.exists && (recipientDoc.data()?['isGroup'] ?? false);
       final roomId = isGroup ? recipientId : getChatRoomId(uid, recipientId);
+      final timestamp = FieldValue.serverTimestamp();
+
       await _firestore.collection("chat_rooms").doc(roomId).collection("messages").add({
         "senderId": uid, "receiverId": isGroup ? null : recipientId, "message": message, "postId": postId,
         "type": "shared_post", "sharedPostContent": postContent, "sharedPostUserName": originalAuthorName,
-        "timestamp": Timestamp.now(), "readBy": [uid], "reactions": {}, "likedBy": [], "deletedFor": [], "isRecalled": false,
+        "timestamp": timestamp, "readBy": [uid], "reactions": {}, "likedBy": [], "deletedFor": [], "isRecalled": false,
       });
       await _firestore.collection("notifications").add({
-        "userId": recipientId, "senderId": uid, "senderName": senderName, "postId": postId, "type": "shared_post", "message": message, "timestamp": Timestamp.now(), "isRead": false
+        "userId": recipientId, "senderId": uid, "senderName": senderName, "postId": postId, "type": "shared_post", "message": message, "timestamp": timestamp, "isRead": false
       });
       final lastMessageText = "Đã chia sẻ một bài viết của $originalAuthorName";
       await _firestore.collection("chat_rooms").doc(roomId).set({
         if (!isGroup) "participants": [uid, recipientId], "lastMessage": message != null && message.isNotEmpty ? message : lastMessageText,
-        "updatedAt": FieldValue.serverTimestamp(), "lastSenderId": uid,
+        "updatedAt": timestamp, "lastSenderId": uid,
       }, SetOptions(merge: true));
     }
   }

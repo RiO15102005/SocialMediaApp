@@ -34,6 +34,9 @@ class ChatBubble extends StatefulWidget {
   final bool isLiked;
   final VoidCallback? onLikePressed;
 
+  // ⭐ MỚI: Highlight tin nhắn khi tìm kiếm
+  final bool isHighlighted;
+
   const ChatBubble({
     Key? key,
     required this.message,
@@ -62,8 +65,10 @@ class ChatBubble extends StatefulWidget {
     this.likedBy = const [],
     this.isLiked = false,
     this.onLikePressed,
+    this.isHighlighted = false, // Default false
   }) : super(key: key);
 
+  // ... (Constructor ChatBubble.sharedPost giữ nguyên, thêm isHighlighted = false)
   const ChatBubble.sharedPost({
     Key? key,
     required this.isCurrentUser,
@@ -88,6 +93,7 @@ class ChatBubble extends StatefulWidget {
     this.likedBy = const [],
     this.isLiked = false,
     this.onLikePressed,
+    this.isHighlighted = false,
   })  : message = 'Đã chia sẻ một bài viết',
         isSharedPost = true,
         type = 'shared_post',
@@ -99,6 +105,7 @@ class ChatBubble extends StatefulWidget {
 }
 
 class _ChatBubbleState extends State<ChatBubble> {
+  // ... (Giữ nguyên các biến và hàm helper như _formatTime, _buildSenderAvatar...)
   bool _showSeenDetails = false;
   final Map<String, String> _reactionIcons = {'like': '👍', 'love': '❤️', 'haha': '😂', 'sad': '😢'};
 
@@ -107,7 +114,7 @@ class _ChatBubbleState extends State<ChatBubble> {
     return "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
   }
 
-  // --- Widget Avatar Người Gửi ---
+  // --- Các hàm _buildSenderAvatar, _buildReplyHeader... giữ nguyên từ code cũ ---
   Widget _buildSenderAvatar() {
     if (widget.senderAvatarUrl != null && widget.senderAvatarUrl!.isNotEmpty) {
       return CircleAvatar(radius: 14, backgroundImage: NetworkImage(widget.senderAvatarUrl!));
@@ -127,40 +134,27 @@ class _ChatBubbleState extends State<ChatBubble> {
     );
   }
 
-  // --- Widget Header: "X đã trả lời Y" ---
   Widget _buildReplyHeader() {
     if (widget.replyToName == null) return const SizedBox.shrink();
-
     const textStyle = TextStyle(fontSize: 11, color: Colors.black54, fontWeight: FontWeight.w600);
-
-    // ⭐ SỬA: Padding linh hoạt theo người gửi (Trái/Phải)
     final padding = widget.isCurrentUser
-        ? const EdgeInsets.only(right: 14, bottom: 4) // Căn phải nếu là mình
-        : const EdgeInsets.only(left: 14, bottom: 4); // Căn trái nếu là người khác
+        ? const EdgeInsets.only(right: 14, bottom: 4)
+        : const EdgeInsets.only(left: 14, bottom: 4);
 
     if (widget.isCurrentUser) {
-      return Padding(
-        padding: padding,
-        child: Text("Bạn đã trả lời ${widget.replyToName}", style: textStyle),
-      );
+      return Padding(padding: padding, child: Text("Bạn đã trả lời ${widget.replyToName}", style: textStyle));
     } else {
       return FutureBuilder<DocumentSnapshot>(
         future: FirebaseFirestore.instance.collection('users').doc(widget.senderId).get(),
         builder: (context, snapshot) {
           String senderName = "Người dùng";
-          if (snapshot.hasData) {
-            senderName = snapshot.data!.get('displayName') ?? "Người dùng";
-          }
-          return Padding(
-            padding: padding,
-            child: Text("$senderName đã trả lời ${widget.replyToName}", style: textStyle),
-          );
+          if (snapshot.hasData) senderName = snapshot.data!.get('displayName') ?? "Người dùng";
+          return Padding(padding: padding, child: Text("$senderName đã trả lời ${widget.replyToName}", style: textStyle));
         },
       );
     }
   }
 
-  // --- Widgets Avatar Người Đã Xem ---
   Widget _buildSeenAvatar(String uid) {
     return FutureBuilder<DocumentSnapshot>(
       future: FirebaseFirestore.instance.collection('users').doc(uid).get(),
@@ -211,11 +205,7 @@ class _ChatBubbleState extends State<ChatBubble> {
       final reaction = widget.reactions.values.last;
       return Container(
         padding: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 1))]
-        ),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10), boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 1))]),
         child: Text(_reactionIcons[reaction] ?? '👍', style: const TextStyle(fontSize: 14)),
       );
     } else {
@@ -226,17 +216,8 @@ class _ChatBubbleState extends State<ChatBubble> {
         onTap: widget.onViewReactions,
         child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 1))]
-            ),
-            child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ...top3.map((r) => Text(_reactionIcons[r] ?? '', style: const TextStyle(fontSize: 12))),
-                  if (total > 0) Padding(padding: const EdgeInsets.only(left: 4), child: Text(total.toString(), style: const TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.bold)))
-                ]
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 1))]),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [...top3.map((r) => Text(_reactionIcons[r] ?? '', style: const TextStyle(fontSize: 12))), if (total > 0) Padding(padding: const EdgeInsets.only(left: 4), child: Text(total.toString(), style: const TextStyle(fontSize: 12, color: Colors.black54, fontWeight: FontWeight.bold)))]
             )
         ),
       );
@@ -254,6 +235,16 @@ class _ChatBubbleState extends State<ChatBubble> {
 
   @override
   Widget build(BuildContext context) {
+    // ⭐ LOGIC MÀU NỀN
+    Color bubbleColor;
+    if (widget.isHighlighted) {
+      bubbleColor = Colors.amber.shade300; // Màu highlight khi tìm kiếm
+    } else if (widget.type == 'image') {
+      bubbleColor = Colors.transparent;
+    } else {
+      bubbleColor = widget.isCurrentUser ? const Color(0xFF1877F2) : Colors.grey[200]!;
+    }
+
     return Align(
       alignment: widget.isCurrentUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Row(
@@ -263,14 +254,10 @@ class _ChatBubbleState extends State<ChatBubble> {
           if (!widget.isCurrentUser) ...[_buildSenderAvatar(), const SizedBox(width: 8)],
           Flexible(
             child: Column(
-              // ⭐ SỬA: Căn phải nếu là mình, căn trái nếu là người khác
               crossAxisAlignment: widget.isCurrentUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: [
-
-                // 1. HEADER & QUOTE
                 if (widget.replyToMessage != null && widget.replyToMessage!.isNotEmpty && !widget.isRevoked)
                   Column(
-                    // ⭐ SỬA: Căn phải nếu là mình, căn trái nếu là người khác
                       crossAxisAlignment: widget.isCurrentUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                       children: [
                         _buildReplyHeader(),
@@ -281,28 +268,14 @@ class _ChatBubbleState extends State<ChatBubble> {
                             child: Container(
                               padding: const EdgeInsets.fromLTRB(14, 10, 14, 16),
                               constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.7, minWidth: 50),
-                              decoration: BoxDecoration(
-                                color: Colors.grey[200],
-                                borderRadius: BorderRadius.circular(18),
-                                border: Border.all(color: Colors.grey.shade300),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    widget.replyToMessage!,
-                                    maxLines: 4, overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontSize: 13, color: Colors.black87),
-                                  ),
-                                ],
-                              ),
+                              decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(18), border: Border.all(color: Colors.grey.shade300)),
+                              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(widget.replyToMessage!, maxLines: 4, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, color: Colors.black87))]),
                             ),
                           ),
                         ),
                       ]
                   ),
 
-                // 2. MAIN BUBBLE + REACTION
                 GestureDetector(
                   onDoubleTap: () { if (!widget.isRevoked && widget.onReactionTap != null) widget.onReactionTap!('like'); },
                   onLongPress: () => _showReactionMenu(context),
@@ -319,7 +292,7 @@ class _ChatBubbleState extends State<ChatBubble> {
                         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
                         constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
                         decoration: BoxDecoration(
-                          color: (widget.type == 'image') ? Colors.transparent : (widget.isCurrentUser ? const Color(0xFF1877F2) : Colors.grey[200]),
+                          color: bubbleColor, // ⭐ Sử dụng màu đã tính toán
                           borderRadius: BorderRadius.circular(18),
                           border: (widget.replyToMessage != null && !widget.isRevoked) ? Border.all(color: Colors.white, width: 2) : null,
                         ),
@@ -328,8 +301,6 @@ class _ChatBubbleState extends State<ChatBubble> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-
-                            // A. Nội dung tin nhắn
                             if (widget.type == 'image' && widget.imageUrl != null)
                               ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(widget.imageUrl!, width: 200, fit: BoxFit.cover))
                             else if (widget.isSharedPost)
@@ -337,40 +308,24 @@ class _ChatBubbleState extends State<ChatBubble> {
                             else
                               Text(
                                 widget.message,
-                                style: TextStyle(fontSize: 16, color: widget.isCurrentUser ? Colors.white : Colors.black),
+                                style: TextStyle(fontSize: 16, color: (widget.isHighlighted) ? Colors.black : (widget.isCurrentUser ? Colors.white : Colors.black)), // ⭐ Text màu đen nếu đang highlight
                               ),
 
                             const SizedBox(height: 4),
-
-                            // B. Thời gian (Góc dưới trái)
                             if (widget.type != 'image')
                               Text(
                                 _formatTime(widget.timestamp),
-                                style: TextStyle(
-                                    fontSize: 10,
-                                    color: widget.isCurrentUser ? Colors.white70 : Colors.black54,
-                                    fontStyle: FontStyle.italic
-                                ),
+                                style: TextStyle(fontSize: 10, color: (widget.isHighlighted) ? Colors.black54 : (widget.isCurrentUser ? Colors.white70 : Colors.black54), fontStyle: FontStyle.italic),
                               ),
-
-                            if (!widget.isRevoked && widget.reactions.isNotEmpty)
-                              const SizedBox(height: 10),
+                            if (!widget.isRevoked && widget.reactions.isNotEmpty) const SizedBox(height: 10),
                           ],
                         ),
                       ),
-
-                      // Hiển thị Reaction
-                      if (!widget.isRevoked && widget.reactions.isNotEmpty)
-                        Positioned(
-                          bottom: -6,
-                          right: 0,
-                          child: _buildReactionDisplay(),
-                        ),
+                      if (!widget.isRevoked && widget.reactions.isNotEmpty) Positioned(bottom: -6, right: 0, child: _buildReactionDisplay()),
                     ],
                   ),
                 ),
 
-                // 3. SEEN STATUS
                 if ((widget.isCurrentUser || widget.isGroup) && !widget.isRevoked && widget.readBy.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(right: 4, bottom: 4, top: 6),
