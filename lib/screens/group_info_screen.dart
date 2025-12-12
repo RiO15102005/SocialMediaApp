@@ -55,7 +55,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
     );
   }
 
-  // Rời nhóm (Thành viên thường + Admin đều dùng được, nhưng Admin nên chuyển quyền trước nếu cần - ở đây làm đơn giản)
+  // Rời nhóm
   void _leaveGroup() {
     showDialog(
       context: context,
@@ -122,7 +122,10 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
           }
 
           final groupData = snapshot.data!.data() as Map<String, dynamic>;
-          final List<dynamic> participants = groupData['participants'] ?? [];
+
+          // ⭐ SỬA LỖI Ở ĐÂY: Chuyển List<dynamic> thành List<String>
+          final List<String> participants = List<String>.from(groupData['participants'] ?? []);
+
           final String adminId = groupData['adminId'] ?? '';
           final bool isAdmin = (currentUser.uid == adminId);
 
@@ -154,6 +157,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                             MaterialPageRoute(
                               builder: (_) => AddMemberScreen(
                                 groupId: widget.groupId,
+                                // Bây giờ biến participants đã đúng kiểu List<String>
                                 currentMembers: participants,
                               ),
                             ),
