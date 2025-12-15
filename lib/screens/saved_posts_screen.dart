@@ -26,10 +26,6 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
           backgroundColor: Colors.grey[800],
         ),
       );
-      // The stream will rebuild the list automatically.
-      if (!isSaved) {
-        setState(() {}); // Trigger a rebuild to reflect the change instantly.
-      }
     }
   }
 
@@ -47,7 +43,7 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
         title: const Text('Bài viết đã lưu'),
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: _postService.getSavedPostsStream(currentUser!.uid),
+        stream: _postService.getSavedPostIdsStream(currentUser!.uid),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -59,15 +55,32 @@ class _SavedPostsScreenState extends State<SavedPostsScreen> {
             return const Center(child: Text('Bạn chưa lưu bài viết nào.'));
           }
 
-          final posts = snapshot.data!.docs.map((doc) => Post.fromFirestore(doc)).toList();
+          final savedPostDocs = snapshot.data!.docs;
 
           return ListView.builder(
-            itemCount: posts.length,
+            itemCount: savedPostDocs.length,
             itemBuilder: (context, index) {
-              final post = posts[index];
-              return PostCard(
-                post: post,
-                onPostSaved: _onPostSaved,
+              final savedPost = savedPostDocs[index];
+              final postId = savedPost.id;
+
+              return StreamBuilder<DocumentSnapshot>(
+                stream: _postService.getPostStream(postId),
+                builder: (context, postSnapshot) {
+                  if (!postSnapshot.hasData || !postSnapshot.data!.exists) {
+                    return const SizedBox.shrink();
+                  }
+
+                  final post = Post.fromFirestore(postSnapshot.data!);
+
+                  if (post.isDeleted) {
+                    return const SizedBox.shrink();
+                  }
+
+                  return PostCard(
+                    post: post,
+                    onPostSaved: _onPostSaved,
+                  );
+                },
               );
             },
           );

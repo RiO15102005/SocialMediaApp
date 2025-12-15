@@ -53,7 +53,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     _tabController = TabController(length: _isMyProfile ? 2 : 1, vsync: this);
   }
 
-  // ---------------------- PICK AVATAR ----------------------
   Future<void> _pickAvatar() async {
     final picked = await ImagePicker().pickImage(
       source: ImageSource.gallery,
@@ -77,7 +76,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  // ---------------------- PICK COVER ----------------------
   Future<void> _pickCover() async {
     final picked = await ImagePicker().pickImage(
       source: ImageSource.gallery,
@@ -101,7 +99,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  // ---------------------- SAVE POST ----------------------
   void _onPostSaved(bool isSaved) {
     if (!mounted) return;
 
@@ -117,7 +114,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  // ---------------------- ADD POST ----------------------
   Future<void> _addPost() async {
     final result = await Navigator.push(
       context,
@@ -127,7 +123,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     if (result == true) setState(() {});
   }
 
-  // ---------------------- LOGOUT ----------------------
   Future<void> _logout() async {
     await FirebaseAuth.instance.signOut();
     if (!mounted) return;
@@ -135,7 +130,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
   }
 
-  // ---------------------------------------------------------
   @override
   Widget build(BuildContext context) {
     if (currentUser == null) {
@@ -151,7 +145,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         actions: _isMyProfile
             ? [
           PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, color: Colors.white), // ⭐ FIX
+            icon: const Icon(Icons.more_vert, color: Colors.white), 
             onSelected: (v) {
               if (v == "logout") _logout();
             },
@@ -196,7 +190,6 @@ class _ProfileScreenState extends State<ProfileScreen>
               SliverToBoxAdapter(
                 child: Column(
                   children: [
-                    // --------------------- COVER ---------------------
                     ProfileCover(
                       coverImage: _coverImage != null
                           ? FileImage(_coverImage!)
@@ -209,7 +202,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                       onPickCover: _pickCover,
                     ),
 
-                    // --------------------- AVATAR ---------------------
                     ProfileAvatar(
                       avatarImage: _avatarImage != null
                           ? FileImage(_avatarImage!)
@@ -222,7 +214,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                       onPickAvatar: _pickAvatar,
                     ),
 
-                    // --------------------- INFO ---------------------
                     ProfileInfo(
                       displayName:
                       userData["displayName"] ?? "Người dùng",
@@ -242,7 +233,6 @@ class _ProfileScreenState extends State<ProfileScreen>
 
                     const SizedBox(height: 15),
 
-                    // --------------------- BUTTONS ---------------------
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       child: _isMyProfile
@@ -268,7 +258,6 @@ class _ProfileScreenState extends State<ProfileScreen>
 
                     const SizedBox(height: 15),
 
-                    // --------------------- TAB BAR ---------------------
                     if (_isMyProfile)
                       TabBar(
                         controller: _tabController,
@@ -282,7 +271,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
               )
             ],
-            // --------------------- TAB VIEW ---------------------
             body: _isMyProfile
                 ? TabBarView(
               controller: _tabController,
@@ -298,7 +286,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  // --------------------- POSTS ---------------------
   Widget _buildPostsView() {
     return StreamBuilder<QuerySnapshot>(
       stream: _postService.getUserPostsStream(_targetUserId),
@@ -326,29 +313,42 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  // --------------------- SAVED POSTS ---------------------
   Widget _buildSavedPostsView() {
     return StreamBuilder<QuerySnapshot>(
-      stream: _postService.getSavedPostsStream(currentUser!.uid),
+      stream: _postService.getSavedPostIdsStream(currentUser!.uid),
       builder: (context, snap) {
-        if (!snap.hasData)
+        if (snap.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
+        }
 
-        final posts = snap.data!.docs
-            .map((e) => Post.fromFirestore(e))
-            .where((e) => !e.isDeleted && e.content.isNotEmpty)
-            .toList();
-
-        if (posts.isEmpty)
+        if (!snap.hasData || snap.data!.docs.isEmpty) {
           return Center(child: Text(_emptySavedMessage));
+        }
 
-        return ListView.builder(
-          itemCount: posts.length,
-          itemBuilder: (_, i) => PostCard(
-            post: posts[i],
-            onPostSaved: _onPostSaved,
-            source: "profile",
-          ),
+        final savedPostIds = snap.data!.docs.map((doc) => doc.id).toList();
+
+        return FutureBuilder<List<Post>>(
+          future: _postService.getPostsFromPostIds(savedPostIds),
+          builder: (context, postSnap) {
+            if (postSnap.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            if (!postSnap.hasData || postSnap.data!.isEmpty) {
+              return Center(child: Text(_emptySavedMessage));
+            }
+
+            final posts = postSnap.data!;
+
+            return ListView.builder(
+              itemCount: posts.length,
+              itemBuilder: (_, i) => PostCard(
+                post: posts[i],
+                onPostSaved: _onPostSaved,
+                source: "profile",
+              ),
+            );
+          },
         );
       },
     );

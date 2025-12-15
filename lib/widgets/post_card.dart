@@ -295,9 +295,23 @@ class _PostCardState extends State<PostCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (post.content.isNotEmpty)
+          Text(
+            _expanded || !long
+                ? post.content
+                : '${post.content.substring(0, 200)}...',
+          ),
+        if (post.content.isNotEmpty && long)
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Text(
+              _expanded ? 'Thu gọn' : 'Xem thêm',
+              style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
+            ),
+          ),
         if (post.imageUrl != null && post.imageUrl!.isNotEmpty)
           Padding(
-            padding: const EdgeInsets.only(bottom: 8.0),
+            padding: const EdgeInsets.only(top: 8.0),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(12.0),
               child: Image.network(
@@ -321,20 +335,6 @@ class _PostCardState extends State<PostCard> {
                   );
                 },
               ),
-            ),
-          ),
-        if (post.content.isNotEmpty)
-          Text(
-            _expanded || !long
-                ? post.content
-                : '${post.content.substring(0, 200)}...',
-          ),
-        if (post.content.isNotEmpty && long)
-          InkWell(
-            onTap: () => setState(() => _expanded = !_expanded),
-            child: Text(
-              _expanded ? 'Thu gọn' : 'Xem thêm',
-              style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
             ),
           ),
       ],

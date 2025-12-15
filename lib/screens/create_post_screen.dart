@@ -22,13 +22,14 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   final PostService _postService = PostService();
   bool _isLoading = false;
   File? _imageFile;
+  String? _existingImageUrl;
 
   @override
   void initState() {
     super.initState();
     if (widget.post != null) {
       _textController.text = widget.post!.content;
-      // Note: We don't support editing images for now.
+      _existingImageUrl = widget.post!.imageUrl;
     } else {
       _restoreDraft();
     }
@@ -41,6 +42,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       if (pickedFile != null) {
         setState(() {
           _imageFile = File(pickedFile.path);
+          // Khi chọn ảnh mới, ta không còn giữ ảnh cũ nữa.
+          _existingImageUrl = null; 
         });
       }
     } catch (e) {
@@ -51,6 +54,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         );
       }
     }
+  }
+
+  void _removeImage() {
+    setState(() {
+      _imageFile = null;
+      _existingImageUrl = null;
+    });
   }
 
   Future<void> _restoreDraft() async {
@@ -66,7 +76,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Future<void> _saveDraft() async {
-    // Only save draft for new posts
     if (widget.post == null) {
       try {
         final prefs = await SharedPreferences.getInstance();
@@ -88,7 +97,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   Future<void> _submitPost() async {
     final content = _textController.text.trim();
-    if (content.isEmpty && _imageFile == null) {
+    if (content.isEmpty && _imageFile == null && _existingImageUrl == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Hãy viết gì đó hoặc chọn ảnh để đăng.')),
       );
@@ -99,8 +108,14 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
     try {
       if (widget.post != null) {
-        // We're not handling image editing for now.
-        await _postService.updatePost(widget.post!.postId, content);
+        bool imageWasRemoved = widget.post!.imageUrl != null && _existingImageUrl == null && _imageFile == null;
+        
+        await _postService.updatePost(
+          widget.post!.postId,
+          content,
+          newImage: _imageFile,
+          imageRemoved: imageWasRemoved,
+        );
       } else {
         await _postService.createPost(content: content, imageFile: _imageFile);
       }
@@ -131,7 +146,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   @override
   void dispose() {
-    // Save draft if the user is creating a new post and not in the middle of submitting
     if (!_isLoading && widget.post == null) {
       _saveDraft();
     }
@@ -141,8 +155,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // A post can be submitted if it has text or an image.
-    final bool canPost = _textController.text.isNotEmpty || _imageFile != null;
+    final bool hasContent = _textController.text.isNotEmpty;
+    final bool hasImage = _imageFile != null || (_existingImageUrl != null && _existingImageUrl!.isNotEmpty);
+    final bool canPost = hasContent || hasImage;
 
     return Scaffold(
       appBar: AppBar(
@@ -197,25 +212,28 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  if (_imageFile != null)
+                  if (hasImage)
                     Stack(
                       alignment: Alignment.topRight,
                       children: [
-                        Image.file(
-                          _imageFile!,
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                        ),
+                        if (_imageFile != null)
+                          Image.file(
+                            _imageFile!,
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                          )
+                        else if (_existingImageUrl != null)
+                          Image.network(
+                            _existingImageUrl!,
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                          ),
                         IconButton(
                           icon: const CircleAvatar(
                             backgroundColor: Colors.black54,
                             child: Icon(Icons.close, color: Colors.white, size: 18),
                           ),
-                          onPressed: () {
-                            setState(() {
-                              _imageFile = null;
-                            });
-                          },
+                          onPressed: _removeImage,
                         ),
                       ],
                     ),
@@ -235,7 +253,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   tooltip: 'Chọn ảnh',
                   color: Theme.of(context).primaryColor,
                 ),
-                // You can add more icons here for other functionalities
               ],
             ),
           ),

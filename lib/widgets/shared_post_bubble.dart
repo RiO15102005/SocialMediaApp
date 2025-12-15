@@ -4,6 +4,7 @@ class SharedPostBubble extends StatelessWidget {
   final String message;
   final String postAuthorName;
   final String postContent;
+  final String? postImageUrl;
   final String postCreatedTime;
   final bool isMe;
   final VoidCallback? onTap;
@@ -13,6 +14,7 @@ class SharedPostBubble extends StatelessWidget {
     required this.message,
     required this.postAuthorName,
     required this.postContent,
+    this.postImageUrl,
     required this.postCreatedTime,
     required this.isMe,
     this.onTap,
@@ -92,13 +94,28 @@ class SharedPostBubble extends StatelessWidget {
                           color: secondaryTextColor,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        postContent,
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: secondaryTextColor, fontSize: 14, height: 1.3),
-                      ),
+                      if (postContent.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            postContent,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: secondaryTextColor, fontSize: 14, height: 1.3),
+                          ),
+                        ),
+                      if (postImageUrl != null && postImageUrl!.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8.0),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8.0),
+                            child: Image.network(
+                              postImageUrl!,
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),

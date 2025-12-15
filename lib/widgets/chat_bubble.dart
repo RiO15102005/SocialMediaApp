@@ -25,7 +25,8 @@ class ChatBubble extends StatefulWidget {
   final bool isSharedPost;
   final String? sharedPostContent;
   final String? sharedPostUserName;
-  final String? sharedPostUserAvatar; // Mới
+  final String? sharedPostUserAvatar; 
+  final String? sharedPostImageUrl; // Thêm vào
   final VoidCallback? onSharedPostTap;
   final bool showStatus;
   final List likedBy;
@@ -57,7 +58,8 @@ class ChatBubble extends StatefulWidget {
     this.isSharedPost = false,
     this.sharedPostContent,
     this.sharedPostUserName,
-    this.sharedPostUserAvatar, // Mới
+    this.sharedPostUserAvatar, 
+    this.sharedPostImageUrl, // Thêm vào
     this.onSharedPostTap,
     this.showStatus = false,
     this.likedBy = const [],
@@ -200,6 +202,7 @@ class _ChatBubbleState extends State<ChatBubble> {
   Widget _buildSharedPostCard() {
     final cardColor = widget.isCurrentUser ? Colors.blue.shade50 : Colors.white;
     final hasAvatar = widget.sharedPostUserAvatar != null && widget.sharedPostUserAvatar!.isNotEmpty;
+    final hasImage = widget.sharedPostImageUrl != null && widget.sharedPostImageUrl!.isNotEmpty;
 
     return GestureDetector(
       onTap: widget.onSharedPostTap,
@@ -210,29 +213,42 @@ class _ChatBubbleState extends State<ChatBubble> {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: widget.isCurrentUser ? Colors.blue.shade200 : Colors.grey.shade300, width: 0.5),
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            CircleAvatar(
-              radius: 20,
-              backgroundImage: hasAvatar ? NetworkImage(widget.sharedPostUserAvatar!) : null,
-              child: !hasAvatar ? const Icon(Icons.person, size: 20) : null,
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundImage: hasAvatar ? NetworkImage(widget.sharedPostUserAvatar!) : null,
+                  child: !hasAvatar ? const Icon(Icons.person, size: 20) : null,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(widget.sharedPostUserName ?? 'Người dùng', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black, fontSize: 14)),
+                ),
+              ],
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(widget.sharedPostUserName ?? 'Người dùng', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black, fontSize: 14)),
-                  const SizedBox(height: 4),
-                  Text(
-                    widget.sharedPostContent ?? '',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.black54, fontSize: 13),
-                  ),
-                ],
+            const SizedBox(height: 8),
+            if (widget.sharedPostContent != null && widget.sharedPostContent!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8.0),
+                child: Text(
+                  widget.sharedPostContent!,
+                  maxLines: 5, 
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.black54, fontSize: 13),
+                ),
               ),
-            ),
+            if (hasImage)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8.0),
+                child: Image.network(
+                  widget.sharedPostImageUrl!,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
+              ),
           ],
         ),
       ),

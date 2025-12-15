@@ -12,13 +12,14 @@ class PostService {
 
   final String postCol = "POST";
   final String commentCol = "COMMENTS";
+  final String usersCol = "users";
+  final String savedPostsSubCol = "saved_posts";
 
-  // Sửa lại hàm upload ảnh để không cần user.uid
+
   Future<String?> _uploadImage(File imageFile) async {
     try {
       final fileExtension = path.extension(imageFile.path);
       final fileName = '${DateTime.now().millisecondsSinceEpoch}$fileExtension';
-      // Đường dẫn mới, không chứa user id
       final filePath = 'public/$fileName';
 
       await _supabaseClient.storage
@@ -40,13 +41,23 @@ class PostService {
     }
   }
 
+  Future<void> _deleteImage(String imageUrl) async {
+    try {
+      final uri = Uri.parse(imageUrl);
+      final filePath = uri.pathSegments.last;
+      await _supabaseClient.storage.from('Post_media').remove(['public/$filePath']);
+    } catch (e) {
+      print("Lỗi xóa ảnh: $e");
+    }
+  }
+
 
   Future<void> createPost({required String content, File? imageFile}) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
     if (content.trim().isEmpty && imageFile == null) {
-      return; // Không đăng nếu không có nội dung và không có ảnh
+      return; 
     }
     
     String? imageUrl;
@@ -57,7 +68,7 @@ class PostService {
         }
     }
 
-    final userDoc = await _firestore.collection('users').doc(user.uid).get();
+    final userDoc = await _firestore.collection(usersCol).doc(user.uid).get();
     final userName =
         userDoc.data()?['displayName'] ?? user.email ?? "Ẩn danh";
     final userAvatar = userDoc.data()?['photoURL'];
@@ -68,7 +79,7 @@ class PostService {
       "userName": userName,
       "userAvatar": userAvatar,
       "content": content.trim(),
-      "imageUrl": imageUrl, // <-- LƯU IMAGE URL VÀO FIRESTORE
+      "imageUrl": imageUrl,
       "likes": [],
       "savers": [],
       "repostedBy": [],
@@ -94,9 +105,23 @@ class PostService {
     }
   }
 
-  Future<void> updatePost(String postId, String newContent) async {
+  Future<void> updatePost(String postId, String newContent, {File? newImage, bool imageRemoved = false}) async {
     final postRef = _firestore.collection(postCol).doc(postId);
-    await postRef.update({'content': newContent});
+    final postSnap = await postRef.get();
+    if (!postSnap.exists) return;
+
+    Map<String, dynamic> updates = {'content': newContent};
+    String? oldImageUrl = postSnap.data()?['imageUrl'];
+
+    if (imageRemoved) {
+      if (oldImageUrl != null) await _deleteImage(oldImageUrl);
+      updates['imageUrl'] = null;
+    } else if (newImage != null) {
+      if (oldImageUrl != null) await _deleteImage(oldImageUrl);
+      updates['imageUrl'] = await _uploadImage(newImage);
+    }
+
+    await postRef.update(updates);
   }
 
   Future<void> repost(String originalPostId, String quote) async {
@@ -112,17 +137,16 @@ class PostService {
 
     final originalPost = Post.fromFirestore(postDoc);
 
-    final userDoc = await _firestore.collection('users').doc(user.uid).get();
+    final userDoc = await _firestore.collection(usersCol).doc(user.uid).get();
     final userName =
         userDoc.data()?['displayName'] ?? user.email ?? "Ẩn danh";
     final userAvatar = userDoc.data()?['photoURL'];
 
-    // Create the new post (the repost)
     await _firestore.collection(postCol).add({
       "UID": user.uid,
       "userName": userName,
       "userAvatar": userAvatar,
-      "content": quote, // The user's quote
+      "content": quote, 
       "likes": [],
       "savers": [],
       "repostedBy": [],
@@ -132,10 +156,9 @@ class PostService {
       "isHidden": false,
       "isDeleted": false,
       "isRepost": true,
-      "originalPost": originalPost.toEmbeddedMap(), // Embed original post data
+      "originalPost": originalPost.toEmbeddedMap(), 
     });
 
-    // Update the original post's repostedBy list
     await postRef.update({
       'repostedBy': FieldValue.arrayUnion([user.uid])
     });
@@ -196,7 +219,7 @@ class PostService {
     } else {
       await postRef.update({"likes": FieldValue.arrayUnion([user.uid])});
       if (user.uid != postOwner) {
-        final udoc = await _firestore.collection('users').doc(user.uid).get();
+        final udoc = await _firestore.collection(usersCol).doc(user.uid).get();
         final name = udoc.data()?['displayName'] ?? "Người dùng";
         await _firestore.collection('notifications').add({
           "userId": postOwner,
@@ -215,19 +238,28 @@ class PostService {
     final user = _auth.currentUser;
     if (user == null) return;
 
+    final savedPostRef = _firestore
+        .collection(usersCol)
+        .doc(user.uid)
+        .collection(savedPostsSubCol)
+        .doc(postId);
+
     final postRef = _firestore.collection(postCol).doc(postId);
-    final snap = await postRef.get();
-    final data = snap.data() as Map<String, dynamic>?;
+    final savedDoc = await savedPostRef.get();
 
-    if (data == null) return;
-
-    final savers = List<String>.from(data['savers'] ?? []);
-    final isSaved = savers.contains(user.uid);
-
-    if (isSaved) {
-      await postRef.update({"savers": FieldValue.arrayRemove([user.uid])});
+    if (savedDoc.exists) {
+      await savedPostRef.delete();
+      await postRef.update({
+        "savers": FieldValue.arrayRemove([user.uid])
+      });
     } else {
-      await postRef.update({"savers": FieldValue.arrayUnion([user.uid])});
+      await savedPostRef.set({
+        'postId': postId,
+        'savedAt': FieldValue.serverTimestamp(),
+      });
+      await postRef.update({
+        "savers": FieldValue.arrayUnion([user.uid])
+      });
     }
   }
 
@@ -391,15 +423,20 @@ class PostService {
     return _firestore
         .collection(postCol)
         .where('UID', isEqualTo: userId)
-        // We no longer filter for `isRepost` here. The PostCard will handle rendering.
         .orderBy("timestamp", descending: true)
         .snapshots();
   }
 
-  Stream<QuerySnapshot> getSavedPostsStream(String userId) {
+  Stream<DocumentSnapshot> getPostStream(String postId) {
+    return _firestore.collection(postCol).doc(postId).snapshots();
+  }
+
+  Stream<QuerySnapshot> getSavedPostIdsStream(String userId) {
     return _firestore
-        .collection(postCol)
-        .where('savers', arrayContains: userId)
+        .collection(usersCol)
+        .doc(userId)
+        .collection(savedPostsSubCol)
+        .orderBy('savedAt', descending: true)
         .snapshots();
   }
 }

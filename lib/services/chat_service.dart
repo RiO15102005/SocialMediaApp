@@ -363,6 +363,7 @@ class ChatService {
     final postContent = postData['content'] ?? '';
     final originalAuthorName = postData['userName'] ?? 'Người dùng';
     final originalAuthorAvatar = postData['userAvatar'];
+    final postImageUrl = postData['imageUrl']; // Lấy URL ảnh của bài viết
 
     for (String recipientId in recipientIds) {
       final recipientDoc = await _firestore.collection('chat_rooms').doc(recipientId).get();
@@ -379,6 +380,7 @@ class ChatService {
         "sharedPostContent": postContent, 
         "sharedPostUserName": originalAuthorName,
         "sharedPostUserAvatar": originalAuthorAvatar,
+        "sharedPostImageUrl": postImageUrl, // Thêm URL ảnh vào tin nhắn
         "timestamp": timestamp, 
         "readBy": [uid], 
         "reactions": {}, 

@@ -439,6 +439,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 onRecall: isMe && data["isRecalled"] != true ? () => _confirmRecall(docs[i].id) : null, onDeleteForMe: () => _confirmDeleteForMe(docs[i].id),
                 onReply: () => _onReplyTriggered((type == 'image') ? "[Hình ảnh]" : (data["message"] ?? ""), data['senderId']),
                 sharedPostContent: data['sharedPostContent'], sharedPostUserName: data['sharedPostUserName'], sharedPostUserAvatar: data['sharedPostUserAvatar'],
+                sharedPostImageUrl: data['sharedPostImageUrl'], // Thêm vào
                 onSharedPostTap: () async {
                   final postId = data['postId'];
                   if (postId == null) return;
