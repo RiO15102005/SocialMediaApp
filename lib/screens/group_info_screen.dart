@@ -154,7 +154,7 @@ class _GroupInfoScreenState extends State<GroupInfoScreen> {
                             MaterialPageRoute(
                               builder: (_) => AddMemberScreen(
                                 groupId: widget.groupId,
-                                currentMembers: List<String>.from(participants),
+                                currentMembers: participants,
                               ),
                             ),
                           );

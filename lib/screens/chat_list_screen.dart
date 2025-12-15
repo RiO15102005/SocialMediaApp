@@ -19,9 +19,14 @@ class ChatListScreen extends StatefulWidget {
 class _ChatListScreenState extends State<ChatListScreen> {
   final ChatService _chatService = ChatService();
   final TextEditingController _searchController = TextEditingController();
-
-  final String uid = FirebaseAuth.instance.currentUser!.uid;
   String _search = "";
+  final String uid = FirebaseAuth.instance.currentUser!.uid;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   void _navigateToProfile(BuildContext context, String userId) {
     Navigator.push(
@@ -32,47 +37,52 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
-  // For last message per room, we create a stream that listens to messages collection and emits latest visible message
   Stream<String> lastVisibleMessageStream(String roomId) {
-    // map messages stream to a string representing last visible message
-    return _chatService.getMessages(roomId).map((snap) {
-      String result = "";
-      final docs = snap.docs;
-      for (var i = docs.length - 1; i >= 0; i--) {
-        final data = docs[i].data() as Map<String, dynamic>;
-        final deletedFor = List<String>.from(data["deletedFor"] ?? []);
-        if (deletedFor.contains(uid)) continue;
+    return _chatService.getLastMessageStream(roomId).map((snap) {
+      if (snap.docs.isEmpty) return "Chưa có tin nhắn";
 
-        if (data["isRecalled"] == true) {
-          result = "Tin nhắn đã được thu hồi •";
-        } else if (data['type'] == 'shared_post') {
-          final content = data['sharedPostContent'] as String?;
-          final userName = data['sharedPostUserName'] as String?;
-          final customMessage = data['message'] as String?;
+      final data = snap.docs.first.data() as Map<String, dynamic>;
+      final deletedFor = List<String>.from(data["deletedFor"] ?? []);
 
-          if (customMessage != null && customMessage.isNotEmpty) {
-            result = customMessage;
-          } else {
-            result =
-                'Đã chia sẻ một bài viết của ${userName ?? 'Người dùng'}: "${content ?? ''}"';
-          }
+      if (deletedFor.contains(uid)) return "Tin nhắn đã xóa";
+
+      if (data["isRecalled"] == true) {
+        return "Tin nhắn đã được thu hồi";
+      } else if (data['type'] == 'image') {
+        return "📷 [Hình ảnh]";
+      } else if (data['type'] == 'shared_post') {
+        final content = data['sharedPostContent'] as String?;
+        final userName = data['sharedPostUserName'] as String?;
+        final customMessage = data['message'] as String?;
+        if (customMessage != null && customMessage.isNotEmpty) {
+          return customMessage;
         } else {
-          result = data["message"] ?? "";
+          return 'Đã chia sẻ bài viết của ${userName ?? 'Người dùng'}';
         }
-        break;
+      } else {
+        return data["message"] ?? "";
       }
-      return result;
-    }).distinct();
+    });
   }
 
-  bool isUnread(Map<String, dynamic> data) {
+  bool isUnread(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+
+    if (data['lastSenderId'] == uid) return false;
+    if (doc.metadata.hasPendingWrites) return false;
+
     final updated = data["updatedAt"];
     if (updated == null) return false;
 
-    final lastRead = (data["lastReadTime"] ?? {})[uid];
+    final lastReadMap = data["lastReadTime"] as Map<String, dynamic>?;
+    final lastRead = lastReadMap?[uid] as Timestamp?;
+
     if (lastRead == null) return true;
 
-    return updated.toDate().isAfter(lastRead.toDate());
+    final Timestamp? updatedTs = (updated is Timestamp) ? updated : null;
+    if (updatedTs == null) return false;
+
+    return updatedTs.millisecondsSinceEpoch > lastRead.millisecondsSinceEpoch;
   }
 
   void showDeleteDialog(BuildContext context, String roomId, String name) {
@@ -86,7 +96,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
           TextButton(
             onPressed: () async {
               await _chatService.hideChatRoom(roomId);
-              Navigator.pop(context);
+              if (mounted) Navigator.pop(context);
             },
             child: const Text("Xóa", style: TextStyle(color: Colors.red)),
           )
@@ -95,32 +105,43 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
+  // ⭐ Widget đường kẻ phân cách (Indent = 72: chuẩn Material cho Avatar + Text)
+  Widget _buildDivider() {
+    return const Divider(
+      height: 1,
+      thickness: 0.5,
+      indent: 72, // Đẩy vào 72px để tránh Avatar
+      color: Color(0xFFEEEEEE), // Màu xám nhạt tinh tế
+    );
   }
 
-  Widget buildChatList() {
+  Widget _buildActiveChatList({bool shrinkWrap = false}) {
     return StreamBuilder<QuerySnapshot>(
       stream: _chatService.chatRoomsStream(),
       builder: (context, snap) {
         if (!snap.hasData) return const Center(child: CircularProgressIndicator());
         final rooms = snap.data!.docs;
 
-        if (rooms.isEmpty) {
-          return const Center(child: Text("Chưa có tin nhắn"));
-        }
-
         return ListView.builder(
+          shrinkWrap: shrinkWrap,
+          physics: shrinkWrap ? const NeverScrollableScrollPhysics() : const AlwaysScrollableScrollPhysics(),
           itemCount: rooms.length,
           itemBuilder: (ctx, idx) {
             final room = rooms[idx];
             final data = room.data() as Map<String, dynamic>;
             final roomId = room.id;
 
+            final Map deletedAtMap = (data["deletedAt"] is Map) ? data["deletedAt"] : {};
+            final Timestamp? deletedAt = deletedAtMap[uid] as Timestamp?;
+            final Timestamp? updatedAt = data["updatedAt"] as Timestamp?;
+            if (deletedAt != null) {
+              if (updatedAt == null || updatedAt.compareTo(deletedAt) <= 0) {
+                return const SizedBox.shrink();
+              }
+            }
+
             final isGroup = data["isGroup"] == true;
-            final unread = isUnread(data);
+            final unread = isUnread(room);
 
             return StreamBuilder<String>(
               stream: lastVisibleMessageStream(roomId),
@@ -129,77 +150,156 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
                 if (isGroup) {
                   final name = data["groupName"] ?? "Nhóm";
-                  return ListTile(
-                    leading: const CircleAvatar(
-                      backgroundColor: Colors.blue,
-                      child: Icon(Icons.groups, color: Colors.white),
-                    ),
-                    title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text(
-                      lastMsg,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: unread ? Colors.black : Colors.grey,
-                        fontWeight: unread ? FontWeight.bold : FontWeight.normal,
-                      ),
-                    ),
-                    onLongPress: () => showDeleteDialog(context, roomId, name),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ChatScreen(
-                            receiverId: roomId,
-                            receiverName: name,
-                            receiverAvatar: "",
-                            isGroup: true,
+                  if (_search.isNotEmpty && !name.toLowerCase().contains(_search)) {
+                    return const SizedBox.shrink();
+                  }
+
+                  // ⭐ Wrap ListTile trong Column để thêm Divider
+                  return Column(
+                    children: [
+                      ListTile(
+                        leading: const CircleAvatar(
+                          backgroundColor: Colors.blue,
+                          child: Icon(Icons.groups, color: Colors.white),
+                        ),
+                        title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text(
+                          lastMsg, maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: unread ? Colors.black : Colors.grey,
+                            fontWeight: unread ? FontWeight.bold : FontWeight.normal,
                           ),
                         ),
-                      );
-                    },
+                        onLongPress: () => showDeleteDialog(context, roomId, name),
+                        onTap: () {
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(receiverId: roomId, receiverName: name, isGroup: true)));
+                        },
+                      ),
+                      _buildDivider(), // Thêm dòng kẻ
+                    ],
                   );
                 }
 
                 final participants = List.from(data["participants"] ?? []);
                 final otherId = participants.firstWhere((x) => x != uid, orElse: () => "");
+                if (otherId.isEmpty) return const SizedBox.shrink();
 
                 return FutureBuilder<DocumentSnapshot>(
                   future: FirebaseFirestore.instance.collection("users").doc(otherId).get(),
                   builder: (context, userSnap) {
-                    if (!userSnap.hasData) return const SizedBox();
-                    final user = userSnap.data!.data() as Map<String, dynamic>;
-                    final name = user["displayName"] ?? "Người dùng";
-                    final avatar = user["photoURL"];
+                    if (!userSnap.hasData) return const SizedBox.shrink();
+                    final user = userSnap.data!.data() as Map<String, dynamic>?;
+                    final name = user?["displayName"] ?? "Người dùng";
+                    final email = user?["email"] ?? "";
+                    final avatar = user?["photoURL"];
 
-                    return ListTile(
-                      leading: GestureDetector(
-                        onTap: () => _navigateToProfile(context, otherId),
-                        child: CircleAvatar(
-                          backgroundImage: (avatar != null && avatar.isNotEmpty) ? NetworkImage(avatar) : null,
-                          child: (avatar == null || avatar.isEmpty) ? const Icon(Icons.person) : null,
+                    if (_search.isNotEmpty) {
+                      bool matchName = name.toString().toLowerCase().contains(_search);
+                      bool matchEmail = email.toString().toLowerCase().contains(_search);
+                      if (!matchName && !matchEmail) {
+                        return const SizedBox.shrink();
+                      }
+                    }
+
+                    // ⭐ Wrap ListTile trong Column để thêm Divider
+                    return Column(
+                      children: [
+                        ListTile(
+                          leading: GestureDetector(
+                            onTap: () => _navigateToProfile(context, otherId),
+                            child: CircleAvatar(
+                              backgroundImage: (avatar != null && avatar.isNotEmpty) ? NetworkImage(avatar) : null,
+                              child: (avatar == null || avatar.isEmpty) ? const Icon(Icons.person) : null,
+                            ),
+                          ),
+                          title: Text(name, style: TextStyle(fontWeight: unread ? FontWeight.bold : FontWeight.w600)),
+                          subtitle: Text(
+                            lastMsg.isEmpty ? "Tin nhắn đã xóa" : lastMsg,
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: unread ? Colors.black87 : Colors.grey, fontWeight: unread ? FontWeight.bold : FontWeight.normal),
+                          ),
+                          onLongPress: () => showDeleteDialog(context, roomId, name),
+                          onTap: () {
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => ChatScreen(receiverId: otherId, receiverName: name, receiverAvatar: avatar, isGroup: false)));
+                          },
                         ),
+                        _buildDivider(), // Thêm dòng kẻ
+                      ],
+                    );
+                  },
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFriendSuggestions() {
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
+      builder: (context, userSnap) {
+        if (!userSnap.hasData) return const SizedBox.shrink();
+
+        final userData = userSnap.data!.data() as Map<String, dynamic>? ?? {};
+        final List<dynamic> friendIds = userData['friends'] ?? [];
+
+        if (friendIds.isEmpty) return const SizedBox.shrink();
+
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance.collection('users').snapshots(),
+          builder: (context, allUsersSnap) {
+            if (!allUsersSnap.hasData) return const Center(child: CircularProgressIndicator());
+
+            final allDocs = allUsersSnap.data!.docs;
+
+            final matchedFriends = allDocs.where((doc) {
+              final d = doc.data() as Map<String, dynamic>;
+              final userId = doc.id;
+              final name = (d['displayName'] ?? '').toString().toLowerCase();
+              final email = (d['email'] ?? '').toString().toLowerCase();
+              bool isFriend = friendIds.contains(userId);
+              bool isMatch = name.contains(_search) || email.contains(_search);
+              return isFriend && isMatch;
+            }).toList();
+
+            if (matchedFriends.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text("Không tìm thấy bạn bè phù hợp", style: TextStyle(color: Colors.grey)),
+              );
+            }
+
+            return ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: matchedFriends.length,
+              itemBuilder: (context, index) {
+                final userDoc = matchedFriends[index];
+                final userData = userDoc.data() as Map<String, dynamic>;
+                final name = userData['displayName'] ?? 'Người dùng';
+                final email = userData['email'] ?? '';
+                final avatar = userData['photoURL'];
+                final userId = userDoc.id;
+
+                // ⭐ Wrap ListTile trong Column để thêm Divider
+                return Column(
+                  children: [
+                    ListTile(
+                      leading: CircleAvatar(
+                        backgroundImage: (avatar != null && avatar.isNotEmpty) ? NetworkImage(avatar) : null,
+                        child: (avatar == null || avatar.isEmpty) ? const Icon(Icons.person) : null,
                       ),
-                      title: GestureDetector(
-                        onTap: () => _navigateToProfile(context, otherId),
-                        child: Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                      ),
-                      subtitle: Text(
-                        lastMsg.isEmpty ? "Tin nhắn đã bị xóa" : lastMsg,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: unread ? Colors.black : Colors.grey,
-                          fontWeight: unread ? FontWeight.bold : FontWeight.normal,
-                        ),
-                      ),
-                      onLongPress: () => showDeleteDialog(context, roomId, name),
+                      title: Text(name),
+                      subtitle: Text(email, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                      trailing: const Icon(Icons.message, color: Color(0xFF1877F2)),
                       onTap: () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) => ChatScreen(
-                              receiverId: otherId,
+                              receiverId: userId,
                               receiverName: name,
                               receiverAvatar: avatar,
                               isGroup: false,
@@ -207,8 +307,9 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           ),
                         );
                       },
-                    );
-                  },
+                    ),
+                    _buildDivider(), // Thêm dòng kẻ
+                  ],
                 );
               },
             );
@@ -235,15 +336,46 @@ class _ChatListScreenState extends State<ChatListScreen> {
               controller: _searchController,
               onChanged: (v) => setState(() => _search = v.trim().toLowerCase()),
               decoration: InputDecoration(
-                hintText: "Tìm kiếm bạn bè...",
+                hintText: "Tìm theo tên hoặc email...",
                 filled: true,
                 fillColor: Colors.white,
                 prefixIcon: const Icon(Icons.search),
+                suffixIcon: _search.isNotEmpty
+                    ? IconButton(icon: const Icon(Icons.clear), onPressed: () {
+                  _searchController.clear();
+                  setState(() => _search = "");
+                })
+                    : null,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
+                contentPadding: const EdgeInsets.symmetric(vertical: 0),
               ),
             ),
           ),
-          Expanded(child: buildChatList()),
+          Expanded(
+            child: _search.isEmpty
+                ? _buildActiveChatList()
+                : SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    color: Colors.grey[100],
+                    child: const Text("Cuộc trò chuyện", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+                  ),
+                  _buildActiveChatList(shrinkWrap: true),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    color: Colors.grey[100],
+                    child: const Text("Gợi ý từ danh bạ", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey)),
+                  ),
+                  _buildFriendSuggestions(),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
