@@ -240,7 +240,7 @@ class ChatService {
     try {
       final myDoc = await _firestore.collection('users').doc(uid).get();
       final myName = myDoc.data()?['displayName'] ?? "QTV";
-      await _sendSystemMessage(groupId, "$myName đã tạo nhóm \"$groupName\"");
+      await _sendSystemMessage(groupId, '$myName đã tạo nhóm "$groupName"');
       for (var memberId in members) {
         if (memberId == uid) continue;
         final memberDoc = await _firestore.collection('users').doc(memberId).get();
@@ -362,6 +362,7 @@ class ChatService {
     final postData = postDoc.data()!;
     final postContent = postData['content'] ?? '';
     final originalAuthorName = postData['userName'] ?? 'Người dùng';
+    final originalAuthorAvatar = postData['userAvatar'];
 
     for (String recipientId in recipientIds) {
       final recipientDoc = await _firestore.collection('chat_rooms').doc(recipientId).get();
@@ -370,9 +371,20 @@ class ChatService {
       final timestamp = FieldValue.serverTimestamp();
 
       await _firestore.collection("chat_rooms").doc(roomId).collection("messages").add({
-        "senderId": uid, "receiverId": isGroup ? null : recipientId, "message": message, "postId": postId,
-        "type": "shared_post", "sharedPostContent": postContent, "sharedPostUserName": originalAuthorName,
-        "timestamp": timestamp, "readBy": [uid], "reactions": {}, "likedBy": [], "deletedFor": [], "isRecalled": false,
+        "senderId": uid, 
+        "receiverId": isGroup ? null : recipientId, 
+        "message": message, 
+        "postId": postId,
+        "type": "shared_post", 
+        "sharedPostContent": postContent, 
+        "sharedPostUserName": originalAuthorName,
+        "sharedPostUserAvatar": originalAuthorAvatar,
+        "timestamp": timestamp, 
+        "readBy": [uid], 
+        "reactions": {}, 
+        "likedBy": [], 
+        "deletedFor": [], 
+        "isRecalled": false,
       });
       await _firestore.collection("notifications").add({
         "userId": recipientId, "senderId": uid, "senderName": senderName, "postId": postId, "type": "shared_post", "message": message, "timestamp": timestamp, "isRead": false

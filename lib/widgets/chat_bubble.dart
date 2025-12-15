@@ -1,5 +1,3 @@
-// lib/widgets/chat_bubble.dart
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
@@ -12,7 +10,6 @@ class ChatBubble extends StatefulWidget {
   final VoidCallback? onDeleteForMe;
   final VoidCallback? onReply;
 
-  // Reply Info
   final String? replyToMessage;
   final String? replyToName;
 
@@ -28,13 +25,13 @@ class ChatBubble extends StatefulWidget {
   final bool isSharedPost;
   final String? sharedPostContent;
   final String? sharedPostUserName;
+  final String? sharedPostUserAvatar; // Mới
   final VoidCallback? onSharedPostTap;
   final bool showStatus;
   final List likedBy;
   final bool isLiked;
   final VoidCallback? onLikePressed;
 
-  // ⭐ MỚI: Highlight tin nhắn khi tìm kiếm
   final bool isHighlighted;
 
   const ChatBubble({
@@ -60,52 +57,20 @@ class ChatBubble extends StatefulWidget {
     this.isSharedPost = false,
     this.sharedPostContent,
     this.sharedPostUserName,
+    this.sharedPostUserAvatar, // Mới
     this.onSharedPostTap,
-    this.showStatus = false,
-    this.likedBy = const [],
-    this.isLiked = false,
-    this.onLikePressed,
-    this.isHighlighted = false, // Default false
-  }) : super(key: key);
-
-  // ... (Constructor ChatBubble.sharedPost giữ nguyên, thêm isHighlighted = false)
-  const ChatBubble.sharedPost({
-    Key? key,
-    required this.isCurrentUser,
-    required this.timestamp,
-    required this.isRevoked,
-    required this.senderId,
-    this.senderAvatarUrl,
-    this.onRecall,
-    this.onDeleteForMe,
-    this.onReply,
-    this.replyToMessage,
-    this.replyToName,
-    this.sharedPostContent,
-    this.sharedPostUserName,
-    this.onSharedPostTap,
-    this.readBy = const [],
-    this.isGroup = false,
-    this.reactions = const {},
-    this.onReactionTap,
-    this.onViewReactions,
     this.showStatus = false,
     this.likedBy = const [],
     this.isLiked = false,
     this.onLikePressed,
     this.isHighlighted = false,
-  })  : message = 'Đã chia sẻ một bài viết',
-        isSharedPost = true,
-        type = 'shared_post',
-        imageUrl = null,
-        super(key: key);
+  }) : super(key: key);
 
   @override
   State<ChatBubble> createState() => _ChatBubbleState();
 }
 
 class _ChatBubbleState extends State<ChatBubble> {
-  // ... (Giữ nguyên các biến và hàm helper như _formatTime, _buildSenderAvatar...)
   bool _showSeenDetails = false;
   final Map<String, String> _reactionIcons = {'like': '👍', 'love': '❤️', 'haha': '😂', 'sad': '😢'};
 
@@ -114,7 +79,6 @@ class _ChatBubbleState extends State<ChatBubble> {
     return "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
   }
 
-  // --- Các hàm _buildSenderAvatar, _buildReplyHeader... giữ nguyên từ code cũ ---
   Widget _buildSenderAvatar() {
     if (widget.senderAvatarUrl != null && widget.senderAvatarUrl!.isNotEmpty) {
       return CircleAvatar(radius: 14, backgroundImage: NetworkImage(widget.senderAvatarUrl!));
@@ -209,7 +173,7 @@ class _ChatBubbleState extends State<ChatBubble> {
         child: Text(_reactionIcons[reaction] ?? '👍', style: const TextStyle(fontSize: 14)),
       );
     } else {
-      Map<String, int> counts = {}; widget.reactions.values.forEach((r) => counts[r] = (counts[r] ?? 0) + 1);
+      Map<String, int> counts = {}; widget.reactions.forEach((k, r) => counts[r] = (counts[r] ?? 0) + 1);
       var sortedKeys = counts.keys.toList()..sort((a, b) => counts[b]!.compareTo(counts[a]!));
       var top3 = sortedKeys.take(3).toList(); var total = widget.reactions.length;
       return GestureDetector(
@@ -233,17 +197,60 @@ class _ChatBubbleState extends State<ChatBubble> {
     ])));
   }
 
+  Widget _buildSharedPostCard() {
+    final cardColor = widget.isCurrentUser ? Colors.blue.shade50 : Colors.white;
+    final hasAvatar = widget.sharedPostUserAvatar != null && widget.sharedPostUserAvatar!.isNotEmpty;
+
+    return GestureDetector(
+      onTap: widget.onSharedPostTap,
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: widget.isCurrentUser ? Colors.blue.shade200 : Colors.grey.shade300, width: 0.5),
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 20,
+              backgroundImage: hasAvatar ? NetworkImage(widget.sharedPostUserAvatar!) : null,
+              child: !hasAvatar ? const Icon(Icons.person, size: 20) : null,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.sharedPostUserName ?? 'Người dùng', style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black, fontSize: 14)),
+                  const SizedBox(height: 4),
+                  Text(
+                    widget.sharedPostContent ?? '',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.black54, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // ⭐ LOGIC MÀU NỀN
     Color bubbleColor;
     if (widget.isHighlighted) {
-      bubbleColor = Colors.amber.shade300; // Màu highlight khi tìm kiếm
-    } else if (widget.type == 'image') {
+      bubbleColor = Colors.amber.shade300;
+    } else if (widget.type == 'image' || (widget.isSharedPost && widget.message.isEmpty)) {
       bubbleColor = Colors.transparent;
     } else {
       bubbleColor = widget.isCurrentUser ? const Color(0xFF1877F2) : Colors.grey[200]!;
     }
+
+    final textColor = (widget.isHighlighted) ? Colors.black : (widget.isCurrentUser ? Colors.white : Colors.black);
 
     return Align(
       alignment: widget.isCurrentUser ? Alignment.centerRight : Alignment.centerLeft,
@@ -279,24 +286,26 @@ class _ChatBubbleState extends State<ChatBubble> {
                 GestureDetector(
                   onDoubleTap: () { if (!widget.isRevoked && widget.onReactionTap != null) widget.onReactionTap!('like'); },
                   onLongPress: () => _showReactionMenu(context),
-                  onTap: () {
+                   onTap: () {
                     if ((widget.isCurrentUser || widget.isGroup) && !widget.isRevoked) setState(() => _showSeenDetails = !_showSeenDetails);
-                    if (widget.type == 'image' && widget.imageUrl != null) showDialog(context: context, builder: (_) => Dialog(backgroundColor: Colors.transparent, child: InteractiveViewer(child: Image.network(widget.imageUrl!))));
-                    else if (widget.isSharedPost && widget.onSharedPostTap != null) widget.onSharedPostTap!();
+                    if (widget.type == 'image' && widget.imageUrl != null) {
+                      showDialog(context: context, builder: (_) => Dialog(backgroundColor: Colors.transparent, child: InteractiveViewer(child: Image.network(widget.imageUrl!))));
+                    } else if (widget.isSharedPost && widget.onSharedPostTap != null) {
+                       widget.onSharedPostTap!();
+                    }
                   },
                   child: Stack(
                     clipBehavior: Clip.none,
                     children: [
                       Container(
                         margin: const EdgeInsets.symmetric(vertical: 2),
-                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
+                        padding: (widget.isSharedPost && widget.message.isEmpty) ? EdgeInsets.zero : const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
                         constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
                         decoration: BoxDecoration(
-                          color: bubbleColor, // ⭐ Sử dụng màu đã tính toán
+                          color: bubbleColor,
                           borderRadius: BorderRadius.circular(18),
                           border: (widget.replyToMessage != null && !widget.isRevoked) ? Border.all(color: Colors.white, width: 2) : null,
                         ),
-
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
@@ -304,15 +313,22 @@ class _ChatBubbleState extends State<ChatBubble> {
                             if (widget.type == 'image' && widget.imageUrl != null)
                               ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.network(widget.imageUrl!, width: 200, fit: BoxFit.cover))
                             else if (widget.isSharedPost)
-                              RichText(text: TextSpan(style: TextStyle(fontSize: 16, color: widget.isCurrentUser ? Colors.white : Colors.black), children: [const TextSpan(text: 'Đã chia sẻ bài viết của '), TextSpan(text: widget.sharedPostUserName ?? 'Người dùng', style: const TextStyle(fontWeight: FontWeight.bold)), const TextSpan(text: ': '), TextSpan(text: '''${widget.sharedPostContent}''', style: const TextStyle(fontStyle: FontStyle.italic))]))
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (widget.message.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 8.0),
+                                      child: Text(widget.message, style: TextStyle(fontSize: 16, color: textColor)),
+                                    ),
+                                  _buildSharedPostCard(),
+                                ],
+                              )
                             else
-                              Text(
-                                widget.message,
-                                style: TextStyle(fontSize: 16, color: (widget.isHighlighted) ? Colors.black : (widget.isCurrentUser ? Colors.white : Colors.black)), // ⭐ Text màu đen nếu đang highlight
-                              ),
+                              Text(widget.message, style: TextStyle(fontSize: 16, color: textColor)),
 
                             const SizedBox(height: 4),
-                            if (widget.type != 'image')
+                            if (widget.type != 'image' && !(widget.isSharedPost && widget.message.isEmpty))
                               Text(
                                 _formatTime(widget.timestamp),
                                 style: TextStyle(fontSize: 10, color: (widget.isHighlighted) ? Colors.black54 : (widget.isCurrentUser ? Colors.white70 : Colors.black54), fontStyle: FontStyle.italic),

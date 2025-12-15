@@ -3,10 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import '../models/post_model.dart';
+import '../services/post_service.dart';
 import '../services/chat_service.dart';
 import '../widgets/chat_bubble.dart';
+import 'comment_screen.dart';
 import 'group_info_screen.dart';
-import 'post_detail_screen.dart';
 import 'profile_screen.dart';
 import 'create_group_screen.dart';
 
@@ -31,6 +33,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ChatService _chatService = ChatService();
+  final PostService _postService = PostService();
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final ScrollController _scrollController = ScrollController();
   final ImagePicker _picker = ImagePicker();
@@ -429,13 +432,21 @@ class _ChatScreenState extends State<ChatScreen> {
               final displayMessage = isRevoked ? "Tin nhắn đã được thu hồi" : (data["message"] ?? "");
 
               return ChatBubble(
-                message: displayMessage, isCurrentUser: isMe, timestamp: data["timestamp"] ?? Timestamp.now(), isRevoked: isRevoked, type: isSharedPost ? 'shared_post' : type, imageUrl: data['imageUrl'],
+                message: displayMessage, isCurrentUser: isMe, timestamp: data["timestamp"] ?? Timestamp.now(), isRevoked: isRevoked, type: type, isSharedPost: isSharedPost, imageUrl: data['imageUrl'],
                 replyToMessage: data['replyToMessage'], replyToName: data['replyToName'],
                 readBy: viewers, isGroup: widget.isGroup, senderId: data['senderId'], senderAvatarUrl: (!isMe && !widget.isGroup) ? widget.receiverAvatar : null,
                 reactions: reactions, onReactionTap: (reaction) => _handleReaction(docs[i].id, reactions, reaction), onViewReactions: () => _showReactionDetailsDialog(reactions), onLikePressed: () => _chatService.toggleLikeMessage(chatRoomId, docs[i].id),
                 onRecall: isMe && data["isRecalled"] != true ? () => _confirmRecall(docs[i].id) : null, onDeleteForMe: () => _confirmDeleteForMe(docs[i].id),
                 onReply: () => _onReplyTriggered((type == 'image') ? "[Hình ảnh]" : (data["message"] ?? ""), data['senderId']),
-                sharedPostContent: data['sharedPostContent'], sharedPostUserName: data['sharedPostUserName'], onSharedPostTap: () { Navigator.push(context, MaterialPageRoute(builder: (context) => PostDetailScreen(postId: data['postId']))); },
+                sharedPostContent: data['sharedPostContent'], sharedPostUserName: data['sharedPostUserName'], sharedPostUserAvatar: data['sharedPostUserAvatar'],
+                onSharedPostTap: () async {
+                  final postId = data['postId'];
+                  if (postId == null) return;
+                  final post = await _postService.getPostById(postId);
+                  if (post != null && mounted) {
+                    Navigator.push(context, MaterialPageRoute(builder: (context) => CommentScreen(post: post)));
+                  }
+                },
                 isHighlighted: isHighlighted,
               );
             },
