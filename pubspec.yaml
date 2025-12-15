@@ -23,6 +23,8 @@ dependencies:
   # Thêm Supabase (⭐ quan trọng)
   supabase_flutter: ^2.3.3
 
+  font_awesome_flutter: ^10.7.0
+
   # Khác
   rxdart: ^0.28.0
   cupertino_icons: ^1.0.8
