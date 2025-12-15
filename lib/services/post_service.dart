@@ -308,18 +308,29 @@ class PostService {
     String text,
     String userName, {
     String? parentId,
+    File? imageFile,
   }) async {
     final user = _auth.currentUser;
-    if (user == null || text.trim().isEmpty) return;
+    if (user == null) return;
+    if (text.trim().isEmpty && imageFile == null) return;
 
     final postRef = _firestore.collection(postCol).doc(postId);
     final postSnap = await postRef.get();
     final postOwner = postSnap.data()?['UID'];
 
+    String? imageUrl;
+    if (imageFile != null) {
+      imageUrl = await _uploadImage(imageFile);
+      if (imageUrl == null) {
+        throw Exception("Không thể tải ảnh lên. Vui lòng thử lại.");
+      }
+    }
+
     final newComment = await postRef.collection(commentCol).add({
       "UID": user.uid,
       "userName": userName,
       "content": text.trim(),
+      "imageUrl": imageUrl,
       "timestamp": Timestamp.now(),
       "parentId": parentId,
       "likes": [],
@@ -360,10 +371,28 @@ class PostService {
   }
 
   Future<void> updateComment(
-      String postId, String commentId, String newContent) async {
-    final commentRef =
-        _firestore.collection(postCol).doc(postId).collection(commentCol).doc(commentId);
-    await commentRef.update({'content': newContent});
+      String postId, String commentId, String newContent,
+      {File? newImage, bool imageRemoved = false}) async {
+    final commentRef = _firestore
+        .collection(postCol)
+        .doc(postId)
+        .collection(commentCol)
+        .doc(commentId);
+    final commentSnap = await commentRef.get();
+    if (!commentSnap.exists) return;
+
+    Map<String, dynamic> updates = {'content': newContent};
+    String? oldImageUrl = commentSnap.data()?['imageUrl'];
+
+    if (newImage != null) {
+      if (oldImageUrl != null) await _deleteImage(oldImageUrl);
+      updates['imageUrl'] = await _uploadImage(newImage);
+    } else if (imageRemoved) {
+      if (oldImageUrl != null) await _deleteImage(oldImageUrl);
+      updates['imageUrl'] = null;
+    }
+
+    await commentRef.update(updates);
   }
 
   Future<void> deleteComment(String postId, String commentId) async {
@@ -378,6 +407,13 @@ class PostService {
     final commentSnap = await commentRef.get();
 
     if (!commentSnap.exists) return;
+
+    final commentData = commentSnap.data();
+    if (commentData != null &&
+        commentData.containsKey('imageUrl') &&
+        commentData['imageUrl'] != null) {
+      await _deleteImage(commentData['imageUrl']);
+    }
 
     final commentOwner = commentSnap.data()?['UID'];
 

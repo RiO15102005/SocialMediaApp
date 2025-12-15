@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/comment_model.dart';
 import '../models/post_model.dart';
 import '../services/post_service.dart';
@@ -50,6 +52,8 @@ class _CommentScreenState extends State<CommentScreen> {
   // For optimistic UI updates
   List<Comment> _comments = [];
   final Set<String> _deletedComments = {};
+
+  File? _imageFile;
 
   @override
   void initState() {
@@ -113,11 +117,21 @@ class _CommentScreenState extends State<CommentScreen> {
     }
   }
 
+  Future<void> _pickImage() async {
+    final pickedFile = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (pickedFile != null) {
+      setState(() {
+        _imageFile = File(pickedFile.path);
+      });
+    }
+  }
+
   Future<void> _sendComment() async {
     final text = _controller.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty && _imageFile == null) return;
 
     final parentId = _replyingId;
+    final imageFile = _imageFile;
 
     FocusScope.of(context).unfocus();
 
@@ -125,6 +139,7 @@ class _CommentScreenState extends State<CommentScreen> {
     setState(() {
       _replyingId = null;
       _replyingName = null;
+      _imageFile = null;
     });
 
     await _postService.sendComment(
@@ -132,28 +147,43 @@ class _CommentScreenState extends State<CommentScreen> {
       text,
       _currentUserName,
       parentId: parentId,
+      imageFile: imageFile,
     );
   }
 
-  Future<void> _editComment(String commentId, String currentContent) async {
-    final controller = TextEditingController(text: currentContent);
-    final newContent = await showDialog<String>(
+  Future<void> _editComment(Comment comment) async {
+    final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Chỉnh sửa bình luận'),
-        content: TextField(controller: controller, autofocus: true),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Hủy')),
-          TextButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Lưu'),
-          ),
-        ],
-      ),
+      builder: (context) => _EditCommentDialog(comment: comment),
     );
 
-    if (newContent != null && newContent.trim().isNotEmpty && newContent != currentContent) {
-      await _postService.updateComment(widget.post.postId, commentId, newContent.trim());
+    if (result != null) {
+      final newContent = result['content'] as String;
+      final newImage = result['image'] as File?;
+      final imageRemoved = result['imageRemoved'] as bool;
+
+      final bool contentChanged = newContent.trim() != comment.content;
+      final bool imageChanged = newImage != null || imageRemoved;
+
+      if (contentChanged || imageChanged) {
+        await _postService.updateComment(
+          widget.post.postId,
+          comment.commentId,
+          newContent.trim(),
+          newImage: newImage,
+          imageRemoved: imageRemoved,
+        );
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).removeCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Đã cập nhật bình luận"),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
     }
   }
 
@@ -382,6 +412,7 @@ class _CommentScreenState extends State<CommentScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             if (_replyingName != null)
               Row(
@@ -402,8 +433,36 @@ class _CommentScreenState extends State<CommentScreen> {
                   )
                 ],
               ),
+            if (_imageFile != null)
+              Stack(
+                children: [
+                  Container(
+                    height: 100,
+                    width: 100,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      image: DecorationImage(
+                        image: FileImage(_imageFile!),
+                        fit: BoxFit.cover,
+                      )
+                    ),
+                  ),
+                  Positioned(
+                    top: -10,
+                    right: -10,
+                    child: IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white, size: 18),
+                      onPressed: () => setState(() => _imageFile = null),
+                    ),
+                  ),
+                ],
+              ),
             Row(
               children: [
+                IconButton(
+                  onPressed: _pickImage,
+                  icon: const Icon(Icons.photo_camera, color: Colors.blue),
+                ),
                 Expanded(
                   child: TextField(
                     controller: _controller,
@@ -422,6 +481,108 @@ class _CommentScreenState extends State<CommentScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _EditCommentDialog extends StatefulWidget {
+  final Comment comment;
+
+  const _EditCommentDialog({required this.comment});
+
+  @override
+  _EditCommentDialogState createState() => _EditCommentDialogState();
+}
+
+class _EditCommentDialogState extends State<_EditCommentDialog> {
+  late final TextEditingController _controller;
+  File? _newImageFile;
+  String? _existingImageUrl;
+  bool _imageRemoved = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.comment.content);
+    _existingImageUrl = widget.comment.imageUrl;
+  }
+
+  Future<void> _pickImage() async {
+    final pickedFile = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (pickedFile != null) {
+      setState(() {
+        _newImageFile = File(pickedFile.path);
+        _existingImageUrl = null; // Remove existing image when new one is picked
+        _imageRemoved = true;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Chỉnh sửa bình luận'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: _controller, autofocus: true),
+            const SizedBox(height: 16),
+            if (_newImageFile != null)
+              Stack(
+                children: [
+                  Image.file(_newImageFile!, height: 100, width: 100, fit: BoxFit.cover),
+                  Positioned(
+                    top: -10,
+                    right: -10,
+                    child: IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white, size: 18),
+                      onPressed: () => setState(() {
+                        _newImageFile = null;
+                        _imageRemoved = true;
+                      }),
+                    ),
+                  ),
+                ],
+              )
+            else if (_existingImageUrl != null)
+              Stack(
+                children: [
+                  Image.network(_existingImageUrl!, height: 100, width: 100, fit: BoxFit.cover),
+                  Positioned(
+                    top: -10,
+                    right: -10,
+                    child: IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white, size: 18),
+                      onPressed: () => setState(() {
+                        _existingImageUrl = null;
+                        _imageRemoved = true;
+                      }),
+                    ),
+                  ),
+                ],
+              ),
+            TextButton.icon(
+              onPressed: _pickImage,
+              icon: const Icon(Icons.photo_camera),
+              label: const Text('Đổi ảnh'),
+            )
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Hủy')),
+        TextButton(
+          onPressed: () {
+            Navigator.pop(context, {
+              'content': _controller.text,
+              'image': _newImageFile,
+              'imageRemoved': _imageRemoved,
+            });
+          },
+          child: const Text('Lưu'),
+        ),
+      ],
     );
   }
 }

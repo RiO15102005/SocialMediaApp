@@ -139,7 +139,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF0F2F5),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1877F2),
         actions: _isMyProfile
@@ -258,28 +258,33 @@ class _ProfileScreenState extends State<ProfileScreen>
 
                     const SizedBox(height: 15),
 
-                    if (_isMyProfile)
-                      TabBar(
-                        controller: _tabController,
-                        tabs: const [
-                          Tab(text: "Bài viết"),
-                          Tab(text: "Đã lưu"),
-                        ],
-                        labelColor: Colors.black,
-                      ),
+                    TabBar(
+                      controller: _tabController,
+                      tabs: _isMyProfile
+                          ? const [
+                              Tab(text: "Bài viết"),
+                              Tab(text: "Đã lưu"),
+                            ]
+                          : const [
+                              Tab(text: "Bài viết"),
+                            ],
+                      labelColor: Colors.black,
+                    ),
                   ],
                 ),
               )
             ],
-            body: _isMyProfile
-                ? TabBarView(
+            body: TabBarView(
               controller: _tabController,
-              children: [
-                _buildPostsView(),
-                _buildSavedPostsView(),
-              ],
-            )
-                : _buildPostsView(),
+              children: _isMyProfile
+                  ? [
+                      _buildPostsView(),
+                      _buildSavedPostsView(),
+                    ]
+                  : [
+                      _buildPostsView(),
+                    ],
+            ),
           );
         },
       ),
@@ -301,8 +306,9 @@ class _ProfileScreenState extends State<ProfileScreen>
         if (posts.isEmpty)
           return Center(child: Text(_emptyPostMessage));
 
-        return ListView.builder(
+        return ListView.separated(
           itemCount: posts.length,
+          separatorBuilder: (context, index) => const SizedBox(height: 8),
           itemBuilder: (_, i) => PostCard(
             post: posts[i],
             onPostSaved: _onPostSaved,
@@ -340,8 +346,9 @@ class _ProfileScreenState extends State<ProfileScreen>
 
             final posts = postSnap.data!;
 
-            return ListView.builder(
+            return ListView.separated(
               itemCount: posts.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 8),
               itemBuilder: (_, i) => PostCard(
                 post: posts[i],
                 onPostSaved: _onPostSaved,

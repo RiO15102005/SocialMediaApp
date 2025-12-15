@@ -18,7 +18,7 @@ class CommentItem extends StatelessWidget {
   final void Function(String id, String user)? onReply;
   final void Function(String id)? onToggleReplies;
   final void Function(String id)? onDelete;
-  final void Function(String id, String currentContent)? onEdit;
+  final void Function(Comment comment)? onEdit;
   final void Function(String id)? onLike;
 
   const CommentItem({
@@ -178,7 +178,16 @@ class CommentItem extends StatelessWidget {
                         ]),
                       ),
                       const SizedBox(height: 4),
-                      Text(comment.content, style: const TextStyle(fontSize: 14.5)),
+                      if(comment.content.isNotEmpty)
+                        Text(comment.content, style: const TextStyle(fontSize: 14.5)),
+                      if (comment.imageUrl != null && comment.imageUrl!.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8.0),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Image.network(comment.imageUrl!)
+                          ),
+                        ),
                       const SizedBox(height: 6),
                       Row(children: [
                         TextButton(
@@ -219,7 +228,7 @@ class CommentItem extends StatelessWidget {
                               if (value == "delete") {
                                 _confirmDelete(context);
                               } else if (value == "edit") {
-                                onEdit?.call(comment.commentId, comment.content);
+                                onEdit?.call(comment);
                               }
                             },
                             itemBuilder: (_) {
