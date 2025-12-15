@@ -33,7 +33,6 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
   late bool _isMyProfile;
   late String _emptyPostMessage;
   final String _emptySavedMessage = "Bạn chưa lưu bài viết nào.";
-  final String _emptyRepostMessage = "Chưa có bài viết nào được đăng lại.";
 
   File? _avatarImage;
   File? _coverImage;
@@ -43,7 +42,8 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
   final Map<String, String> _pendingActions = {}; // postId -> 'hide' or 'delete'
   final Map<String, Timer> _pendingTimers = {};
   final Set<String> _sessionHiddenPosts = {};
-  List<Post> allPosts = [];
+  List<Post> _userPosts = [];
+  List<Post> _savedPosts = [];
 
   @override
   void initState() {
@@ -51,7 +51,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
     final uid = currentUser?.uid ?? '';
     _targetUserId = widget.userId ?? uid;
     _isMyProfile = (_targetUserId == uid);
-    _tabController = TabController(length: _isMyProfile ? 3 : 2, vsync: this);
+    _tabController = TabController(length: _isMyProfile ? 2 : 1, vsync: this);
 
     if (_isMyProfile) {
       _emptyPostMessage = "Chưa có bài viết nào để hiển thị.";
@@ -85,7 +85,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
         timer.cancel();
       }
     }
-    
+
     _pendingTimers.clear();
     if (mounted) {
       setState(() {
@@ -100,7 +100,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
     } else if (action == 'hide') {
       _sessionHiddenPosts.add(postId);
     }
-    if(mounted){
+    if (mounted) {
       setState(() {
         _pendingActions.remove(postId);
         _pendingTimers.remove(postId);
@@ -112,8 +112,10 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
     _clearPendingActions(commit: true);
     if (mounted) {
       setState(() {
-        // This will trigger the stream builders to rebuild
+        _userPosts = [];
+        _savedPosts = [];
       });
+      // Let the stream builders handle the refresh
       await Future.delayed(const Duration(milliseconds: 500));
     }
   }
@@ -158,7 +160,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
         ),
       );
       if (!isSaved && _tabController.index == 1) {
-        setState(() {});
+        setState(() {}); // Refresh saved tab
       }
     }
   }
@@ -169,7 +171,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
     if (result == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Bài viết mới đã được đăng!')));
-      setState(() {});
+      _refresh();
     }
   }
 
@@ -211,7 +213,7 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
     }
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF0F2F5),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1877F2),
         elevation: 0,
@@ -255,55 +257,56 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
           return NestedScrollView(
             headerSliverBuilder: (context, innerBoxIsScrolled) => [
               SliverToBoxAdapter(
-                child: Column(
-                  children: [
-                    ProfileCover(
-                        coverImage: _coverImage != null ? FileImage(_coverImage!) : null,
-                        isMyProfile: _isMyProfile,
-                        onPickCover: () {}),
-                    ProfileAvatar(
-                        avatarImage: _avatarImage != null ? FileImage(_avatarImage!) : null,
-                        isMyProfile: _isMyProfile,
-                        onPickAvatar: () {}),
-                    ProfileInfo(
-                        displayName: userData['displayName'] ?? 'Người dùng',
-                        bio: userData['bio'] ?? 'Chưa có thông tin giới thiệu',
-                        friendsCount: friendsCount,
-                        onFriendsTap: () {
-                          if (friendsCount > 0) {
-                            Navigator.push(context, MaterialPageRoute(builder: (_) => FriendsScreen(userId: _targetUserId)));
-                          }
-                        }),
-                    const SizedBox(height: 20),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: _isMyProfile
-                          ? Row(
-                        children: [
-                          Expanded(child: AddPostButton(onAddPost: _addPost)),
-                          const SizedBox(width: 10),
-                          Expanded(child: ActionButton(isMyProfile: true, targetUserId: _targetUserId)),
+                child: Container(
+                  color: Colors.white,
+                  child: Column(
+                    children: [
+                      ProfileCover(
+                          coverImage: _coverImage != null ? FileImage(_coverImage!) : null,
+                          isMyProfile: _isMyProfile,
+                          onPickCover: () {}),
+                      ProfileAvatar(
+                          avatarImage: _avatarImage != null ? FileImage(_avatarImage!) : null,
+                          isMyProfile: _isMyProfile,
+                          onPickAvatar: () {}),
+                      ProfileInfo(
+                          displayName: userData['displayName'] ?? 'Người dùng',
+                          bio: userData['bio'] ?? 'Chưa có thông tin giới thiệu',
+                          friendsCount: friendsCount,
+                          onFriendsTap: () {
+                            if (friendsCount > 0) {
+                              Navigator.push(context, MaterialPageRoute(builder: (_) => FriendsScreen(userId: _targetUserId)));
+                            }
+                          }),
+                      const SizedBox(height: 20),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: _isMyProfile
+                            ? Row(
+                          children: [
+                            Expanded(child: AddPostButton(onAddPost: _addPost)),
+                            const SizedBox(width: 10),
+                            Expanded(child: ActionButton(isMyProfile: true, targetUserId: _targetUserId)),
+                          ],
+                        )
+                            : ActionButton(isMyProfile: false, targetUserId: _targetUserId),
+                      ),
+                      const SizedBox(height: 20),
+                      TabBar(
+                        controller: _tabController,
+                        tabs: _isMyProfile
+                            ? const [
+                          Tab(text: 'Bài viết'),
+                          Tab(text: 'Đã lưu'),
+                        ]
+                            : const [
+                          Tab(text: 'Bài viết'),
                         ],
-                      )
-                          : ActionButton(isMyProfile: false, targetUserId: _targetUserId),
-                    ),
-                    const SizedBox(height: 20),
-                    TabBar(
-                      controller: _tabController,
-                      tabs: _isMyProfile
-                          ? const [
-                        Tab(text: 'Bài viết'),
-                        Tab(text: 'Đã lưu'),
-                        Tab(text: 'Đã đăng lại'),
-                      ]
-                          : const [
-                        Tab(text: 'Bài viết'),
-                        Tab(text: 'Đã đăng lại'),
-                      ],
-                      labelColor: Colors.black,
-                      unselectedLabelColor: Colors.grey,
-                    ),
-                  ],
+                        labelColor: Colors.black,
+                        unselectedLabelColor: Colors.grey,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -313,11 +316,9 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
                   ? [
                 _buildPostsView(),
                 _buildSavedPostsView(),
-                _buildRepostsView(),
               ]
                   : [
                 _buildPostsView(),
-                _buildRepostsView(),
               ],
             ),
           );
@@ -333,54 +334,65 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
         if (snapshot.hasError) {
           return const Center(child: Text("Lỗi khi tải bài viết."));
         }
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            _userPosts.isEmpty) {
           return const Center(child: CircularProgressIndicator());
         }
 
-        allPosts = (snapshot.data?.docs ?? []).map((doc) => Post.fromFirestore(doc)).toList();
+        if (snapshot.hasData) {
+          _userPosts = (snapshot.data?.docs ?? [])
+              .map((doc) => Post.fromFirestore(doc))
+              .toList();
+          _userPosts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+        }
 
-        final visiblePosts = allPosts.where((p) => 
-          !p.isDeleted && 
-          !_sessionHiddenPosts.contains(p.postId) &&
-          !_pendingActions.containsKey(p.postId)
-        ).toList();
+        final List<Post> displayPosts = _userPosts
+            .where((post) =>
+        !_sessionHiddenPosts.contains(post.postId) && !post.isDeleted)
+            .toList();
 
-        if (visiblePosts.isEmpty && _pendingActions.isEmpty) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Text(_emptyPostMessage, style: const TextStyle(fontSize: 16, color: Colors.grey)),
-              ),
-            );
+        if (displayPosts.isEmpty && _pendingActions.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(20.0),
+              child: Text(_emptyPostMessage,
+                  style: const TextStyle(fontSize: 16, color: Colors.grey)),
+            ),
+          );
         }
 
         return RefreshIndicator(
           onRefresh: _refresh,
           child: ListView.builder(
-            padding: const EdgeInsets.all(8.0),
-            itemCount: allPosts.length,
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            itemCount: displayPosts.length,
             itemBuilder: (context, index) {
-              final post = allPosts[index];
+              final post = displayPosts[index];
               final action = _pendingActions[post.postId];
 
               if (action != null) {
                 return _buildUndoBanner(
-                  action == 'delete' ? 'Đã xóa bài viết.' : 'Đã ẩn bài viết.',
-                  () => _undoPostAction(post.postId),
+                  action == 'delete'
+                      ? 'Đã xóa bài viết.'
+                      : 'Đã ẩn bài viết.',
+                      () => _undoPostAction(post.postId),
                 );
-              }
-
-              if (post.isDeleted || _sessionHiddenPosts.contains(post.postId)) {
-                return const SizedBox.shrink();
               }
 
               return PostCard(
                 key: ValueKey(post.postId),
                 post: post,
+                onPostDeleted: () {
+                  _handlePostAction(post.postId, 'delete');
+                  // Force immediate rebuild so the undo banner appears right away
+                  if (mounted) setState(() {});
+                },
+                onPostHidden: () {
+                  _handlePostAction(post.postId, 'hide');
+                  // Force immediate rebuild so the undo banner appears right away
+                  if (mounted) setState(() {});
+                },
                 onPostSaved: _onPostSaved,
-                onPostDeleted: () => _handlePostAction(post.postId, 'delete'),
-                onPostHidden: () => _handlePostAction(post.postId, 'hide'),
-                source: 'profile',
               );
             },
           ),
@@ -394,26 +406,32 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
       stream: _postService.getSavedPostsStream(currentUser!.uid),
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return Center(child: Text("Lỗi khi tải bài viết đã lưu: ${snapshot.error}"));
+          return Center(
+              child: Text("Lỗi khi tải bài viết đã lưu: ${snapshot.error}"));
         }
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            _savedPosts.isEmpty) {
           return const Center(child: CircularProgressIndicator());
         }
 
-        allPosts = (snapshot.data?.docs ?? []).map((doc) => Post.fromFirestore(doc)).toList();
-        
-        allPosts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-        final visiblePosts = allPosts.where((p) => 
-          !p.isDeleted && 
-          !_sessionHiddenPosts.contains(p.postId) &&
-          !_pendingActions.containsKey(p.postId)
-        ).toList();
+        if (snapshot.hasData) {
+          _savedPosts = (snapshot.data?.docs ?? [])
+              .map((doc) => Post.fromFirestore(doc))
+              .toList();
+          _savedPosts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+        }
 
-        if (visiblePosts.isEmpty && _pendingActions.isEmpty) {
+        final List<Post> displayPosts = _savedPosts
+            .where((post) =>
+        !_sessionHiddenPosts.contains(post.postId) && !post.isDeleted)
+            .toList();
+
+        if (displayPosts.isEmpty && _pendingActions.isEmpty) {
           return Center(
             child: Padding(
               padding: const EdgeInsets.all(20.0),
-              child: Text(_emptySavedMessage, style: const TextStyle(fontSize: 16, color: Colors.grey)),
+              child: Text(_emptySavedMessage,
+                  style: const TextStyle(fontSize: 16, color: Colors.grey)),
             ),
           );
         }
@@ -421,95 +439,35 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
         return RefreshIndicator(
           onRefresh: _refresh,
           child: ListView.builder(
-            padding: const EdgeInsets.all(8.0),
-            itemCount: allPosts.length,
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            itemCount: displayPosts.length,
             itemBuilder: (context, index) {
-              final post = allPosts[index];
-               final action = _pendingActions[post.postId];
-
-              if (action != null) {
-                return _buildUndoBanner(
-                  action == 'delete' ? 'Đã xóa bài viết.' : 'Đã ẩn bài viết.',
-                  () => _undoPostAction(post.postId),
-                );
-              }
-
-              if (post.isDeleted || _sessionHiddenPosts.contains(post.postId)) {
-                return const SizedBox.shrink();
-              }
-              
-              return PostCard(
-                key: ValueKey(post.postId),
-                post: post,
-                onPostSaved: _onPostSaved,
-                onPostDeleted: () => _handlePostAction(post.postId, 'delete'),
-                onPostHidden: () => _handlePostAction(post.postId, 'hide'),
-                source: 'profile',
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildRepostsView() {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _postService.getRepostedPostsStream(_targetUserId),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return const Center(child: Text("Lỗi khi tải bài viết đã đăng lại."));
-        }
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        allPosts = (snapshot.data?.docs ?? []).map((doc) => Post.fromFirestore(doc)).toList();
-        allPosts.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-
-        final visiblePosts = allPosts.where((p) => 
-          !p.isDeleted && 
-          !_sessionHiddenPosts.contains(p.postId) &&
-          !_pendingActions.containsKey(p.postId)
-        ).toList();
-
-        if (visiblePosts.isEmpty && _pendingActions.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Text(_emptyRepostMessage, style: const TextStyle(fontSize: 16, color: Colors.grey)),
-            ),
-          );
-        }
-        
-
-        return RefreshIndicator(
-          onRefresh: _refresh,
-          child: ListView.builder(
-            padding: const EdgeInsets.all(8.0),
-            itemCount: allPosts.length,
-            itemBuilder: (context, index) {
-              final post = allPosts[index];
+              final post = displayPosts[index];
               final action = _pendingActions[post.postId];
 
               if (action != null) {
                 return _buildUndoBanner(
-                  action == 'delete' ? 'Đã xóa bài viết.' : 'Đã ẩn bài viết.',
-                  () => _undoPostAction(post.postId),
+                  action == 'delete'
+                      ? 'Đã xóa bài viết.'
+                      : 'Đã ẩn bài viết.',
+                      () => _undoPostAction(post.postId),
                 );
               }
 
-              if (post.isDeleted || _sessionHiddenPosts.contains(post.postId)) {
-                return const SizedBox.shrink();
-              }
-              
               return PostCard(
                 key: ValueKey(post.postId),
                 post: post,
+                onPostDeleted: () {
+                  _handlePostAction(post.postId, 'delete');
+
+                  if (mounted) setState(() {});
+                },
+                onPostHidden: () {
+                  _handlePostAction(post.postId, 'hide');
+
+                  if (mounted) setState(() {});
+                },
                 onPostSaved: _onPostSaved,
-                onPostDeleted: () => _handlePostAction(post.postId, 'delete'),
-                onPostHidden: () => _handlePostAction(post.postId, 'hide'),
-                source: 'profile',
               );
             },
           ),

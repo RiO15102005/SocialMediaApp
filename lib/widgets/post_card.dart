@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
-import 'dart:math' as math;
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+
 import '../models/post_model.dart';
+import '../screens/create_post_screen.dart';
 import '../screens/likes_screen.dart';
 import '../services/post_service.dart';
 import '../screens/comment_screen.dart';
@@ -38,11 +40,15 @@ class _PostCardState extends State<PostCard> {
   final User? currentUser = FirebaseAuth.instance.currentUser;
   bool _expanded = false;
 
-  void _navigateToProfile() {
+  void _navigateToProfile(String userId) {
+    final currentProfile =
+    context.findAncestorWidgetOfExactType<ProfileScreen>();
+    if (currentProfile != null && currentProfile.userId == userId) return;
+
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => ProfileScreen(userId: widget.post.userId),
+        builder: (_) => ProfileScreen(userId: userId),
       ),
     );
   }
@@ -53,32 +59,18 @@ class _PostCardState extends State<PostCard> {
     final isLiked = widget.post.likes.contains(uid);
 
     setState(() {
-      isLiked ? widget.post.likes.remove(uid) : widget.post.likes.add(uid);
+      isLiked
+          ? widget.post.likes.remove(uid)
+          : widget.post.likes.add(uid);
     });
 
     try {
       await _postService.toggleLike(widget.post.postId);
     } catch (_) {
       setState(() {
-        isLiked ? widget.post.likes.add(uid) : widget.post.likes.remove(uid);
-      });
-    }
-  }
-
-  Future<void> _toggleRepost() async {
-    if (currentUser == null) return;
-    final uid = currentUser!.uid;
-    final isReposted = widget.post.repostedBy.contains(uid);
-
-    setState(() {
-      isReposted ? widget.post.repostedBy.remove(uid) : widget.post.repostedBy.add(uid);
-    });
-
-    try {
-      await _postService.toggleRepost(widget.post.postId);
-    } catch (_) {
-      setState(() {
-        isReposted ? widget.post.repostedBy.add(uid) : widget.post.repostedBy.remove(uid);
+        isLiked
+            ? widget.post.likes.add(uid)
+            : widget.post.likes.remove(uid);
       });
     }
   }
@@ -86,30 +78,25 @@ class _PostCardState extends State<PostCard> {
   Future<void> _toggleSave() async {
     if (currentUser == null) return;
     final uid = currentUser!.uid;
-    final isCurrentlySaved = widget.post.savers.contains(uid);
-    final bool newSaveState = !isCurrentlySaved;
+    final isSaved = widget.post.savers.contains(uid);
 
     setState(() {
-      if (newSaveState) {
-        widget.post.savers.add(uid);
-      } else {
-        widget.post.savers.remove(uid);
-      }
+      isSaved
+          ? widget.post.savers.remove(uid)
+          : widget.post.savers.add(uid);
     });
 
-    widget.onPostSaved?.call(newSaveState);
+    widget.onPostSaved?.call(!isSaved);
 
     try {
       await _postService.toggleSavePost(widget.post.postId);
     } catch (_) {
       setState(() {
-        if (newSaveState) {
-          widget.post.savers.remove(uid);
-        } else {
-          widget.post.savers.add(uid);
-        }
+        isSaved
+            ? widget.post.savers.add(uid)
+            : widget.post.savers.remove(uid);
       });
-      widget.onPostSaved?.call(isCurrentlySaved);
+      widget.onPostSaved?.call(isSaved);
     }
   }
 
@@ -131,238 +118,312 @@ class _PostCardState extends State<PostCard> {
     final result = await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => FractionallySizedBox(
-        heightFactor: 0.7,
-        child: SharePostScreen(post: widget.post),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => SharePostScreen(
+        post: widget.post,
       ),
     );
 
-    if (result == true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Bạn đã chia sẻ bài viết này.'),
-          duration: Duration(seconds: 2),
+    if (!mounted || result == null) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result == 'reposted'
+              ? 'Đã chia sẻ bài viết.'
+              : 'Đã gửi bài viết cho bạn bè.',
         ),
-      );
-    }
+      ),
+    );
   }
 
   void _showLikes() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => FractionallySizedBox(
+      builder: (_) => FractionallySizedBox(
         heightFactor: 0.7,
         child: LikesScreen(userIds: widget.post.likes),
       ),
     );
   }
 
-  String _formatTimestamp(DateTime timestamp) {
-    final now = DateTime.now();
-    final difference = now.difference(timestamp);
-
-    if (difference.inDays < 7) {
-      if (difference.inHours > 0) {
-        return "${difference.inHours} giờ trước";
-      } else if (difference.inMinutes > 0) {
-        return "${difference.inMinutes} phút trước";
-      } else {
-        return "Vừa xong";
-      }
-    } else {
-      return DateFormat('dd/MM').format(timestamp);
-    }
-  }
-
-  Future<bool> _confirmAction(String title, String content) async {
-    return await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: Text(title),
-            content: Text(content),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(false),
-                  child: const Text("Hủy")),
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                child: const Text("Xác nhận", style: TextStyle(color: Colors.red)),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+  String _formatTime(DateTime time) {
+    final diff = DateTime.now().difference(time);
+    if (diff.inMinutes < 1) return 'Vừa xong';
+    if (diff.inHours < 1) return '${diff.inMinutes} phút trước';
+    if (diff.inDays < 1) return '${diff.inHours} giờ trước';
+    if (diff.inDays < 7) return '${diff.inDays} ngày trước';
+    return DateFormat('dd/MM/yyyy').format(time);
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool isLiked = currentUser != null && widget.post.likes.contains(currentUser!.uid);
-    final bool isSaved = currentUser != null && widget.post.savers.contains(currentUser!.uid);
-    final bool isReposted = currentUser != null && widget.post.repostedBy.contains(currentUser!.uid);
-    final String timeStr = _formatTimestamp(widget.post.timestamp.toDate());
-    final int likeCount = widget.post.likes.length;
-    final int repostCount = widget.post.repostedBy.length;
-
-    final bool longContent = widget.post.content.length > 140;
-    final String displayContent =
-        (!longContent || _expanded) ? widget.post.content : '${widget.post.content.substring(0, 140)}...';
-
     return Container(
-      width: double.infinity,
       color: Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       margin: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              GestureDetector(
-                onTap: _navigateToProfile,
-                child: const CircleAvatar(radius: 20, child: Icon(Icons.person, size: 18)),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: GestureDetector(
-                  onTap: _navigateToProfile,
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(widget.post.userName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                    const SizedBox(height: 2),
-                    Text(timeStr, style: const TextStyle(fontSize: 12, color: Colors.grey)),
-                  ]),
-                ),
-              ),
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.more_horiz, size: 20),
-                onSelected: (value) async {
-                  if (value == "delete") {
-                    final confirm = await _confirmAction("Xóa bài viết?", "Bạn có chắc chắn muốn xóa bài viết này không?");
-                    if (confirm) {
-                      widget.onPostDeleted?.call();
-                    }
-                  } else if (value == "hide") {
-                    widget.onPostHidden?.call();
-                  }
-                },
-                itemBuilder: (_) => [
-                  const PopupMenuItem(
-                    value: "hide",
-                    child: Text("Ẩn bài viết"),
-                  ),
-                  if (currentUser?.uid == widget.post.userId)
-                    const PopupMenuItem(
-                      value: "delete",
-                      child: Text("Xóa bài viết", style: TextStyle(color: Colors.red)),
-                    ),
-                ],
-              ),
-            ],
-          ),
+          _buildHeader(widget.post),
           const SizedBox(height: 8),
-          if (widget.post.content.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(left: 2, right: 2),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    displayContent,
-                    style: const TextStyle(fontSize: 14.5, height: 1.4, color: Colors.black87),
-                  ),
-                  if (longContent)
-                    TextButton(
-                      onPressed: () => setState(() => _expanded = !_expanded),
-                      style: TextButton.styleFrom(
-                        padding: EdgeInsets.zero,
-                        minimumSize: Size.zero,
-                      ),
-                      child: Text(
-                        _expanded ? "Thu gọn" : "Xem thêm",
-                        style: const TextStyle(fontSize: 13, color: Color(0xFF1877F2)),
-                      ),
-                    ),
-                ],
-              ),
-            ),
+          _buildContent(widget.post),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              if (widget.showLikeButton)
-                IconButton(
-                  icon: Icon(
-                    isLiked ? Icons.favorite : Icons.favorite_border,
-                    color: isLiked ? Colors.red : Colors.grey,
-                  ),
-                  onPressed: _toggleLike,
-                ),
-              if (likeCount > 0)
-                Text(
-                  '$likeCount',
-                  style: const TextStyle(color: Colors.grey),
-                ),
-              const SizedBox(width: 16),
-              if (widget.showCommentButton)
-                IconButton(
-                  icon: const Icon(Icons.chat_bubble_outline_rounded, color: Colors.grey),
-                  onPressed: _openComments,
-                ),
-              if (widget.post.commentsCount > 0)
-                Text(
-                  '${widget.post.commentsCount}',
-                  style: const TextStyle(color: Colors.grey),
-                ),
-              const SizedBox(width: 16),
-              IconButton(
-                icon: Transform.rotate(
-                  angle: 180 * math.pi / 180,
-                  child: Icon(
-                    Icons.repeat,
-                    color: isReposted ? Colors.green : Colors.grey,
-                  ),
-                ),
-                onPressed: _toggleRepost,
-              ),
-              if (repostCount > 0)
-                Text(
-                  '$repostCount',
-                  style: const TextStyle(color: Colors.grey),
-                ),
-              const SizedBox(width: 16),
-              IconButton(
-                icon: const Icon(Icons.near_me_outlined, color: Colors.grey),
-                onPressed: _openShareSheet,
-              ),
-              if (widget.post.shares > 0)
-                Text(
-                  '${widget.post.shares}',
-                  style: const TextStyle(color: Colors.grey),
-                ),
-              const Spacer(),
-              IconButton(
-                icon: Icon(
-                  isSaved ? Icons.bookmark : Icons.bookmark_border,
-                  color: isSaved ? Theme.of(context).primaryColor : Colors.grey,
-                  weight: isSaved ? 700 : 400,
-                ),
-                onPressed: _toggleSave,
-              ),
-            ],
-          ),
-          if (isLiked && likeCount > 1)
-            GestureDetector(
-              onTap: _showLikes,
-              child: Padding(
-                padding: const EdgeInsets.only(left: 12.0, top: 4.0),
-                child: Text(
-                  '${isLiked ? 'Bạn và ' : ''}${likeCount - 1} người khác đã thích',
-                  style: const TextStyle(color: Colors.grey),
-                ),
-              ),
-            ),
-          const SizedBox(height: 8),
+          _buildActions(widget.post),
+          _buildLikesContext(widget.post),
         ],
+      ),
+    );
+  }
+
+  Widget _buildHeader(Post post, {bool showActions = true}) {
+    final isMine = currentUser?.uid == post.userId;
+
+    return Row(
+      children: [
+        GestureDetector(
+          onTap: () => _navigateToProfile(post.userId),
+          child: CircleAvatar(
+            radius: 20,
+            backgroundImage:
+            post.userAvatar?.isNotEmpty == true
+                ? NetworkImage(post.userAvatar!)
+                : null,
+            child: post.userAvatar?.isEmpty ?? true
+                ? const Icon(Icons.person, size: 18)
+                : null,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: GestureDetector(
+            onTap: () => _navigateToProfile(post.userId),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(post.userName,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600)),
+                Text(
+                  _formatTime(post.timestamp.toDate()),
+                  style: const TextStyle(
+                      fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (showActions)
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_horiz),
+            onSelected: (v) async {
+              if (v == 'delete') widget.onPostDeleted?.call();
+              if (v == 'hide') widget.onPostHidden?.call();
+              if (v == 'edit') {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CreatePostScreen(post: post),
+                  ),
+                );
+              }
+            },
+            itemBuilder: (_) => [
+              if (isMine)
+                const PopupMenuItem(
+                    value: 'edit', child: Text('Chỉnh sửa')),
+              if (isMine)
+                const PopupMenuItem(
+                    value: 'delete', child: Text('Xóa')),
+              const PopupMenuItem(
+                  value: 'hide', child: Text('Ẩn bài viết')),
+            ],
+          ),
+      ],
+    );
+  }
+
+  Widget _buildContent(Post post) {
+    if (post.isRepost && post.originalPost != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (post.content.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8.0),
+              child: Text(post.content),
+            ),
+          Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildHeader(post.originalPost!, showActions: false),
+                const SizedBox(height: 8),
+                Text(
+                  post.originalPost!.content,
+                  maxLines: 5,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    final long = post.content.length > 200;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          _expanded || !long
+              ? post.content
+              : '${post.content.substring(0, 200)}...',
+        ),
+        if (long)
+          InkWell(
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Text(
+              _expanded ? 'Thu gọn' : 'Xem thêm',
+              style: const TextStyle(
+                  color: Colors.blue,
+                  fontWeight: FontWeight.bold),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildActions(Post post) {
+    final liked =
+        currentUser != null &&
+            post.likes.contains(currentUser!.uid);
+    final saved =
+        currentUser != null &&
+            post.savers.contains(currentUser!.uid);
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Row(
+          children: [
+            _icon(
+              icon: liked
+                  ? Icons.favorite
+                  : Icons.favorite_border,
+              color: liked ? Colors.red : Colors.grey,
+              text: post.likes.length.toString(),
+              onTap: _toggleLike,
+            ),
+            InkWell(
+              onTap: _openComments,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: Row(
+                  children: [
+                    const FaIcon(
+                      FontAwesomeIcons.comment,
+                      size: 20,
+                      color: Colors.grey,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      post.commentsCount.toString(),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            InkWell(
+              onTap: _openShareSheet,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 6),
+                child: Row(
+                  children: [
+                    Transform.rotate(
+                      angle: 0.35,
+                      child: const FaIcon(
+                        FontAwesomeIcons.paperPlane,
+                        size: 20,
+                        color: Colors.grey,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(post.shares.toString(),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        _icon(
+          icon: saved
+              ? Icons.bookmark
+              : Icons.bookmark_border,
+          color:
+          saved ? const Color(0xFF1877F2) : Colors.grey,
+          text: '',
+          onTap: _toggleSave,
+        ),
+      ],
+    );
+  }
+
+  Widget _icon({
+    required IconData icon,
+    required Color color,
+    required String text,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding:
+        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Row(
+          children: [
+            Icon(icon, color: color),
+            if (text.isNotEmpty) const SizedBox(width: 4),
+            if (text.isNotEmpty)
+              Text(text,
+                  style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.w600)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLikesContext(Post post) {
+    if (post.likes.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: GestureDetector(
+        onTap: _showLikes,
+        child: Text(
+          '${post.likes.length} lượt thích',
+          style: const TextStyle(
+              color: Colors.grey,
+              fontWeight: FontWeight.w500),
+        ),
       ),
     );
   }

@@ -21,12 +21,14 @@ class _HomeScreenState extends State<HomeScreen> {
   final User? currentUser = FirebaseAuth.instance.currentUser;
 
   late Future<List<String>> _friendsListFuture;
-  final String _emptyMessage = "Nơi này thật yên tĩnh... Hãy phá vỡ sự im lặng này!";
+  final String _emptyMessage =
+      "Nơi này thật yên tĩnh... Hãy phá vỡ sự im lặng này!";
 
   final Map<String, String> _pendingActions = {}; // postId -> 'hide' or 'delete'
   final Map<String, Timer> _pendingTimers = {};
   final Set<String> _sessionHiddenPosts = {};
-  List<Post> _allPosts = []; // Keep a state copy of posts to avoid loading indicators on refresh
+  List<Post> _allPosts =
+      []; // Keep a state copy of posts to avoid loading indicators on refresh
 
   @override
   void initState() {
@@ -84,6 +86,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) {
       setState(() {
         _friendsListFuture = _userService.getCurrentUserFriendsList();
+        _allPosts = []; // Clear posts to force a reload
       });
       await _friendsListFuture;
     }
@@ -142,7 +145,8 @@ class _HomeScreenState extends State<HomeScreen> {
           Text(message, style: const TextStyle(color: Colors.black87)),
           TextButton(
             onPressed: onUndo,
-            child: const Text('Hoàn tác', style: TextStyle(color: Colors.blueAccent)),
+            child: const Text('Hoàn tác',
+                style: TextStyle(color: Colors.blueAccent)),
           ),
         ],
       ),
@@ -162,7 +166,8 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('Bảng tin'),
         backgroundColor: const Color(0xFF1877F2),
         iconTheme: const IconThemeData(color: Colors.white),
-        titleTextStyle: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+        titleTextStyle: const TextStyle(
+            color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
       ),
       backgroundColor: const Color(0xFFF0F2F5),
       body: RefreshIndicator(
@@ -171,11 +176,13 @@ class _HomeScreenState extends State<HomeScreen> {
         child: FutureBuilder<List<String>>(
           future: _friendsListFuture,
           builder: (context, friendSnap) {
-            if (friendSnap.connectionState == ConnectionState.waiting && _allPosts.isEmpty) {
+            if (friendSnap.connectionState == ConnectionState.waiting &&
+                _allPosts.isEmpty) {
               return const Center(child: CircularProgressIndicator());
             }
             if (friendSnap.hasError) {
-              return const Center(child: Text("Không thể tải danh sách bạn bè."));
+              return const Center(
+                  child: Text("Không thể tải danh sách bạn bè."));
             }
 
             final allowedUIDs = List<String>.from(friendSnap.data ?? []);
@@ -186,33 +193,40 @@ class _HomeScreenState extends State<HomeScreen> {
             return StreamBuilder<QuerySnapshot>(
               stream: _postService.getAllPostsStream(),
               builder: (context, postSnap) {
-                if (postSnap.connectionState == ConnectionState.waiting && _allPosts.isEmpty) {
+                if (postSnap.connectionState == ConnectionState.waiting &&
+                    _allPosts.isEmpty) {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (postSnap.hasError) {
-                  return Center(child: Text("Lỗi khi tải bài viết: ${postSnap.error}"));
+                  return Center(
+                      child: Text("Lỗi khi tải bài viết: ${postSnap.error}"));
                 }
                 if (postSnap.hasData) {
-                  _allPosts = (postSnap.data?.docs ?? []).map((doc) => Post.fromFirestore(doc)).toList();
+                  _allPosts = (postSnap.data?.docs ?? [])
+                      .map((doc) => Post.fromFirestore(doc))
+                      .toList();
                 }
 
-                final visiblePosts = _allPosts.where((post) {
+                // This combines the logic for visible posts and pending actions
+                final List<Post> displayPosts = _allPosts.where((post) {
                   return allowedUIDs.contains(post.userId) &&
                          !post.isDeleted &&
                          !_sessionHiddenPosts.contains(post.postId);
                 }).toList();
 
-                if (visiblePosts.isEmpty && _pendingActions.isEmpty) {
+                if (displayPosts.isEmpty && _pendingActions.isEmpty) {
                   return LayoutBuilder(
                     builder: (context, constraints) => SingleChildScrollView(
                       physics: const AlwaysScrollableScrollPhysics(),
                       child: ConstrainedBox(
-                        constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                        constraints:
+                            BoxConstraints(minHeight: constraints.maxHeight),
                         child: Center(
                           child: Text(
                             _emptyMessage,
                             textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 18, color: Colors.grey),
+                            style: const TextStyle(
+                                fontSize: 18, color: Colors.grey),
                           ),
                         ),
                       ),
@@ -222,32 +236,30 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 return ListView.builder(
                   padding: const EdgeInsets.symmetric(vertical: 8),
-                  itemCount: _allPosts.length,
+                  itemCount: displayPosts.length,
                   itemBuilder: (context, index) {
-                    final post = _allPosts[index];
+                    final post = displayPosts[index];
                     final action = _pendingActions[post.postId];
 
                     if (action != null) {
                       return _buildUndoBanner(
-                        action == 'delete' ? 'Đã xóa bài viết.' : 'Đã ẩn bài viết.',
+                        action == 'delete'
+                            ? 'Đã xóa bài viết.'
+                            : 'Đã ẩn bài viết.',
                         () => _undoPostAction(post.postId),
                       );
+                    } else {
+                      return PostCard(
+                        key: ValueKey(post.postId),
+                        post: post,
+                        source: "home",
+                        onPostDeleted: () =>
+                            _handlePostAction(post.postId, 'delete'),
+                        onPostHidden: () =>
+                            _handlePostAction(post.postId, 'hide'),
+                        onPostSaved: _onPostSaved,
+                      );
                     }
-                    
-                    if (post.isDeleted ||
-                        _sessionHiddenPosts.contains(post.postId) ||
-                        !allowedUIDs.contains(post.userId)) {
-                      return const SizedBox.shrink();
-                    }
-
-                    return PostCard(
-                      key: ValueKey(post.postId),
-                      post: post,
-                      source: "home",
-                      onPostDeleted: () => _handlePostAction(post.postId, 'delete'),
-                      onPostHidden: () => _handlePostAction(post.postId, 'hide'),
-                      onPostSaved: _onPostSaved,
-                    );
                   },
                 );
               },
@@ -256,8 +268,10 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'home_fab', // ⭐ ADDED
         onPressed: () async {
-          final result = await Navigator.push(context, MaterialPageRoute(builder: (_) => const CreatePostScreen()));
+          final result = await Navigator.push(
+              context, MaterialPageRoute(builder: (_) => const CreatePostScreen()));
           if (result == true) {
             _refresh();
           }

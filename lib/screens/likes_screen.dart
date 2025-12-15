@@ -20,7 +20,7 @@ class LikesScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Lượt thích'),
+        title: const Text(' Số lượt thích'),
       ),
       body: ListView.builder(
         itemCount: userIds.length,
@@ -49,8 +49,11 @@ class LikesScreen extends StatelessWidget {
               return ListTile(
                 onTap: () => _navigateToProfile(context, userId),
                 leading: CircleAvatar(
-                  backgroundImage: userAvatar != null ? NetworkImage(userAvatar) : null,
-                  child: userAvatar == null ? const Icon(Icons.person) : null,
+                  radius: 20,
+                  backgroundImage: userAvatar != null && userAvatar.isNotEmpty ? NetworkImage(userAvatar) : null,
+                  child: userAvatar == null || userAvatar.isEmpty
+                      ? const Icon(Icons.person, size: 18)
+                      : null,
                 ),
                 title: Text(userName),
               );

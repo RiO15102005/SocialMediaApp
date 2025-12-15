@@ -11,15 +11,22 @@ class PostService {
 
   Future<void> createPost({required String content}) async {
     final user = _auth.currentUser;
-    if (user == null || content.trim().isEmpty) return;
+    if (user == null) return;
+
+    if (content.trim().isEmpty) {
+      return;
+    }
 
     final userDoc = await _firestore.collection('users').doc(user.uid).get();
-    final userName = userDoc.data()?['displayName'] ?? user.email ?? "Ẩn danh";
+    final userName =
+        userDoc.data()?['displayName'] ?? user.email ?? "Ẩn danh";
+    final userAvatar = userDoc.data()?['photoURL'];
     final friends = List<String>.from(userDoc.data()?['friends'] ?? []);
 
     final newPost = await _firestore.collection(postCol).add({
       "UID": user.uid,
       "userName": userName,
+      "userAvatar": userAvatar,
       "content": content.trim(),
       "likes": [],
       "savers": [],
@@ -29,6 +36,8 @@ class PostService {
       "timestamp": Timestamp.now(),
       "isHidden": false,
       "isDeleted": false,
+      "isRepost": false,
+      "originalPost": null,
     });
 
     for (var f in friends) {
@@ -42,6 +51,53 @@ class PostService {
         "isRead": false
       });
     }
+  }
+
+  Future<void> updatePost(String postId, String newContent) async {
+    final postRef = _firestore.collection(postCol).doc(postId);
+    await postRef.update({'content': newContent});
+  }
+
+  Future<void> repost(String originalPostId, String quote) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    final postRef = _firestore.collection(postCol).doc(originalPostId);
+    final postDoc = await postRef.get();
+
+    if (!postDoc.exists) {
+      throw Exception("Bài viết gốc không tồn tại.");
+    }
+
+    final originalPost = Post.fromFirestore(postDoc);
+
+    final userDoc = await _firestore.collection('users').doc(user.uid).get();
+    final userName =
+        userDoc.data()?['displayName'] ?? user.email ?? "Ẩn danh";
+    final userAvatar = userDoc.data()?['photoURL'];
+
+    // Create the new post (the repost)
+    await _firestore.collection(postCol).add({
+      "UID": user.uid,
+      "userName": userName,
+      "userAvatar": userAvatar,
+      "content": quote, // The user's quote
+      "likes": [],
+      "savers": [],
+      "repostedBy": [],
+      "commentsCount": 0,
+      "shares": 0,
+      "timestamp": Timestamp.now(),
+      "isHidden": false,
+      "isDeleted": false,
+      "isRepost": true,
+      "originalPost": originalPost.toEmbeddedMap(), // Embed original post data
+    });
+
+    // Update the original post's repostedBy list
+    await postRef.update({
+      'repostedBy': FieldValue.arrayUnion([user.uid])
+    });
   }
 
   Future<Post?> getPostById(String postId) async {
@@ -134,33 +190,6 @@ class PostService {
     }
   }
 
-  Future<void> toggleRepost(String postId) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    final postRef = _firestore.collection(postCol).doc(postId);
-    final userRef = _firestore.collection('users').doc(user.uid);
-
-    final postSnap = await postRef.get();
-    final userSnap = await userRef.get();
-
-    final postData = postSnap.data() as Map<String, dynamic>?;
-    final userData = userSnap.data() as Map<String, dynamic>?;
-
-    if (postData == null || userData == null) return;
-
-    final repostedBy = List<String>.from(postData['repostedBy'] ?? []);
-    final isReposted = repostedBy.contains(user.uid);
-
-    if (isReposted) {
-      await postRef.update({'repostedBy': FieldValue.arrayRemove([user.uid])});
-      await userRef.update({'repostedPosts': FieldValue.arrayRemove([postId])});
-    } else {
-      await postRef.update({'repostedBy': FieldValue.arrayUnion([user.uid])});
-      await userRef.update({'repostedPosts': FieldValue.arrayUnion([postId])});
-    }
-  }
-
   Future<void> incrementShare(String postId) async {
     final postRef = _firestore.collection(postCol).doc(postId);
     await postRef.update({'shares': FieldValue.increment(1)});
@@ -202,11 +231,11 @@ class PostService {
   }
 
   Future<void> sendComment(
-      String postId,
-      String text,
-      String userName, {
-        String? parentId,
-      }) async {
+    String postId,
+    String text,
+    String userName, {
+    String? parentId,
+  }) async {
     final user = _auth.currentUser;
     if (user == null || text.trim().isEmpty) return;
 
@@ -239,7 +268,8 @@ class PostService {
     }
 
     if (parentId != null) {
-      final parentSnap = await postRef.collection(commentCol).doc(parentId).get();
+      final parentSnap =
+          await postRef.collection(commentCol).doc(parentId).get();
       final parentOwner = parentSnap.data()?['UID'];
       if (parentOwner != user.uid) {
         await _firestore.collection("notifications").add({
@@ -254,6 +284,13 @@ class PostService {
         });
       }
     }
+  }
+
+  Future<void> updateComment(
+      String postId, String commentId, String newContent) async {
+    final commentRef =
+        _firestore.collection(postCol).doc(postId).collection(commentCol).doc(commentId);
+    await commentRef.update({'content': newContent});
   }
 
   Future<void> deleteComment(String postId, String commentId) async {
@@ -313,6 +350,7 @@ class PostService {
     return _firestore
         .collection(postCol)
         .where('UID', isEqualTo: userId)
+        // We no longer filter for `isRepost` here. The PostCard will handle rendering.
         .orderBy("timestamp", descending: true)
         .snapshots();
   }

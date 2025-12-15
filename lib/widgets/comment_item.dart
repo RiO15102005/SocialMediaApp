@@ -18,6 +18,7 @@ class CommentItem extends StatelessWidget {
   final void Function(String id, String user)? onReply;
   final void Function(String id)? onToggleReplies;
   final void Function(String id)? onDelete;
+  final void Function(String id, String currentContent)? onEdit;
   final void Function(String id)? onLike;
 
   const CommentItem({
@@ -30,6 +31,7 @@ class CommentItem extends StatelessWidget {
     this.onReply,
     this.onToggleReplies,
     this.onDelete,
+    this.onEdit,
     this.onLike,
   });
 
@@ -71,7 +73,8 @@ class CommentItem extends StatelessWidget {
               padding: const EdgeInsets.all(16.0),
               child: Text(
                 '${comment.likes.length} người đã thích',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
               ),
             ),
             const Divider(height: 1),
@@ -88,7 +91,8 @@ class CommentItem extends StatelessWidget {
                           ? const Icon(Icons.person, size: 18)
                           : null,
                     ),
-                    title: Text(user.displayName ?? 'Người dùng không xác định'),
+                    title:
+                        Text(user.displayName ?? 'Người dùng không xác định'),
                   );
                 },
               ),
@@ -103,11 +107,16 @@ class CommentItem extends StatelessWidget {
     final yes = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text("Xóa bình luận?", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text("Xóa bình luận?",
+            style: TextStyle(fontWeight: FontWeight.bold)),
         content: const Text("Bạn có chắc chắn muốn xóa bình luận này không?"),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text("Hủy")),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text("Xóa", style: TextStyle(color: Colors.red))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text("Hủy")),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text("Xóa", style: TextStyle(color: Colors.red))),
         ],
       ),
     );
@@ -119,6 +128,7 @@ class CommentItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final currentUser = FirebaseAuth.instance.currentUser;
+    final isOwner = currentUser?.uid == comment.userId;
     final isLiked = currentUser != null && comment.likes.contains(currentUser.uid);
 
     return GestureDetector(
@@ -133,7 +143,8 @@ class CommentItem extends StatelessWidget {
               children: [
                 GestureDetector(
                   onTap: () => _navigateToProfile(context, comment.userId),
-                  child: const CircleAvatar(radius: 18, child: Icon(Icons.person, size: 18)),
+                  child: const CircleAvatar(
+                      radius: 18, child: Icon(Icons.person, size: 18)),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -143,19 +154,27 @@ class CommentItem extends StatelessWidget {
                       GestureDetector(
                         onTap: () => _navigateToProfile(context, comment.userId),
                         child: Row(children: [
-                          Text(comment.userName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                          Text(comment.userName,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w600, fontSize: 13)),
                           if (isPostAuthor)
                             Container(
                               margin: const EdgeInsets.only(left: 6),
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
                                 color: Colors.grey[200],
                                 borderRadius: BorderRadius.circular(4),
                               ),
-                              child: const Text('Tác giả', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                              child: const Text('Tác giả',
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold)),
                             ),
                           const SizedBox(width: 6),
-                          Text(_formatTime(comment.timestamp), style: TextStyle(color: Colors.grey[600], fontSize: 11)),
+                          Text(_formatTime(comment.timestamp),
+                              style: TextStyle(
+                                  color: Colors.grey[600], fontSize: 11)),
                         ]),
                       ),
                       const SizedBox(height: 4),
@@ -163,9 +182,13 @@ class CommentItem extends StatelessWidget {
                       const SizedBox(height: 6),
                       Row(children: [
                         TextButton(
-                          onPressed: () => onReply?.call(comment.commentId, comment.userName),
-                          style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero),
-                          child: Text("Trả lời", style: TextStyle(fontSize: 13, color: Colors.grey[700])),
+                          onPressed: () =>
+                              onReply?.call(comment.commentId, comment.userName),
+                          style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero, minimumSize: Size.zero),
+                          child: Text("Trả lời",
+                              style: TextStyle(
+                                  fontSize: 13, color: Colors.grey[700])),
                         ),
                         const SizedBox(width: 16),
                         GestureDetector(
@@ -188,16 +211,31 @@ class CommentItem extends StatelessWidget {
                             ),
                           ),
                         const Spacer(),
-                        if (canDelete)
+                        if (canDelete || isOwner)
                           PopupMenuButton<String>(
                             icon: const Icon(Icons.more_vert, size: 18),
                             padding: EdgeInsets.zero,
                             onSelected: (value) {
-                              if (value == "delete") _confirmDelete(context);
+                              if (value == "delete") {
+                                _confirmDelete(context);
+                              } else if (value == "edit") {
+                                onEdit?.call(comment.commentId, comment.content);
+                              }
                             },
-                            itemBuilder: (_) => const [
-                              PopupMenuItem(value: "delete", child: Text("Xóa bình luận", style: TextStyle(color: Colors.red))),
-                            ],
+                            itemBuilder: (_) {
+                              final items = <PopupMenuEntry<String>>[];
+                              if (isOwner) {
+                                items.add(const PopupMenuItem(
+                                    value: "edit", child: Text("Chỉnh sửa")));
+                              }
+                              if (canDelete) {
+                                items.add(const PopupMenuItem(
+                                    value: "delete",
+                                    child: Text("Xóa bình luận",
+                                        style: TextStyle(color: Colors.red))));
+                              }
+                              return items;
+                            },
                           ),
                       ]),
                     ],
@@ -210,9 +248,13 @@ class CommentItem extends StatelessWidget {
                 padding: const EdgeInsets.only(left: 46.0, top: 8.0),
                 child: TextButton(
                   onPressed: () => onToggleReplies?.call(comment.commentId),
-                  style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero),
+                  style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero, minimumSize: Size.zero),
                   child: Text("Xem $replyCount trả lời",
-                      style: TextStyle(color: Colors.blue[700], fontSize: 13, fontWeight: FontWeight.w500)),
+                      style: TextStyle(
+                          color: Colors.blue[700],
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500)),
                 ),
               ),
           ],

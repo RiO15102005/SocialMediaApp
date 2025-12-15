@@ -4,7 +4,8 @@ class Post {
   final String postId;
   final String userId;
   final String userName;
-  final String content;
+  final String? userAvatar;
+  final String content; // For a repost, this is the quote.
   final List<String> likes;
   final List<String> savers;
   final List<String> repostedBy;
@@ -14,10 +15,15 @@ class Post {
   bool isHidden;
   bool isDeleted;
 
+  // Repost-specific fields
+  final bool isRepost;
+  final Post? originalPost;
+
   Post({
     required this.postId,
     required this.userId,
     required this.userName,
+    this.userAvatar,
     required this.content,
     required this.likes,
     required this.savers,
@@ -27,6 +33,8 @@ class Post {
     required this.commentsCount,
     this.isHidden = false,
     this.isDeleted = false,
+    this.isRepost = false,
+    this.originalPost,
   });
 
   factory Post.fromFirestore(DocumentSnapshot doc) {
@@ -36,6 +44,7 @@ class Post {
       postId: doc.id,
       userId: data['UID'] ?? '',
       userName: data['userName'] ?? 'Ẩn danh',
+      userAvatar: data['userAvatar'],
       content: data['content'] ?? '',
       likes: List<String>.from(data['likes'] ?? []),
       savers: List<String>.from(data['savers'] ?? []),
@@ -45,6 +54,38 @@ class Post {
       commentsCount: data['commentsCount'] ?? 0,
       isHidden: data['isHidden'] ?? false,
       isDeleted: data['isDeleted'] ?? false,
+      isRepost: data['isRepost'] ?? false,
+      originalPost: data['originalPost'] != null ? Post.fromMap(data['originalPost']) : null,
     );
+  }
+
+  // Create a Post from a map (used for the nested originalPost)
+  factory Post.fromMap(Map<String, dynamic> map) {
+     return Post(
+      postId: map['postId'] ?? '',
+      userId: map['UID'] ?? '',
+      userName: map['userName'] ?? 'Ẩn danh',
+      userAvatar: map['userAvatar'],
+      content: map['content'] ?? '',
+      timestamp: map['timestamp'] ?? Timestamp.now(),
+      // These fields are not needed for the nested post card.
+      likes: [],
+      savers: [],
+      repostedBy: [],
+      shares: 0,
+      commentsCount: 0,
+    );
+  }
+
+  // Convert a Post object to a Map for storing in Firestore as a nested object
+  Map<String, dynamic> toEmbeddedMap() {
+    return {
+      'postId': postId,
+      'UID': userId,
+      'userName': userName,
+      'userAvatar': userAvatar,
+      'content': content,
+      'timestamp': timestamp,
+    };
   }
 }

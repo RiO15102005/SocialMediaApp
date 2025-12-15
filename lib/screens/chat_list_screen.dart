@@ -247,6 +247,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'chat_list_fab',
         backgroundColor: const Color(0xFF1877F2),
         child: const Icon(Icons.add, color: Colors.white),
         onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateGroupScreen())),
