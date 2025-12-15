@@ -6,6 +6,7 @@ class Post {
   final String userName;
   final String? userAvatar;
   final String content; // For a repost, this is the quote.
+  final String? imageUrl; // <-- THÊM TRƯỜNG MỚI ĐỂ LƯU URL ẢNH
   final List<String> likes;
   final List<String> savers;
   final List<String> repostedBy;
@@ -25,6 +26,7 @@ class Post {
     required this.userName,
     this.userAvatar,
     required this.content,
+    this.imageUrl, // <-- THÊM VÀO CONSTRUCTOR
     required this.likes,
     required this.savers,
     required this.repostedBy,
@@ -46,6 +48,7 @@ class Post {
       userName: data['userName'] ?? 'Ẩn danh',
       userAvatar: data['userAvatar'],
       content: data['content'] ?? '',
+      imageUrl: data['imageUrl'], // <-- ĐỌC TỪ FIRESTORE
       likes: List<String>.from(data['likes'] ?? []),
       savers: List<String>.from(data['savers'] ?? []),
       repostedBy: List<String>.from(data['repostedBy'] ?? []),
@@ -67,6 +70,7 @@ class Post {
       userName: map['userName'] ?? 'Ẩn danh',
       userAvatar: map['userAvatar'],
       content: map['content'] ?? '',
+      imageUrl: map['imageUrl'], // <-- THÊM VÀO ĐỂ HIỂN THỊ ẢNH TRONG BÀI REPOST
       timestamp: map['timestamp'] ?? Timestamp.now(),
       // These fields are not needed for the nested post card.
       likes: [],
@@ -85,6 +89,7 @@ class Post {
       'userName': userName,
       'userAvatar': userAvatar,
       'content': content,
+      'imageUrl': imageUrl, // <-- THÊM VÀO ĐỂ LƯU KHI BÀI VIẾT ĐƯỢC REPOST
       'timestamp': timestamp,
     };
   }

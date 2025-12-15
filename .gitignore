@@ -78,3 +78,4 @@ ios/.symlinks/
 serviceAccountKey.json
 google-services-private.json
 firebase-debug.log
+lib/supabase_credentials.dart

@@ -247,7 +247,9 @@ class _PostCardState extends State<PostCard> {
   }
 
   Widget _buildContent(Post post) {
+    // --- Trường hợp Repost ---
     if (post.isRepost && post.originalPost != null) {
+      final original = post.originalPost!;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -265,13 +267,22 @@ class _PostCardState extends State<PostCard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildHeader(post.originalPost!, showActions: false),
+                _buildHeader(original, showActions: false),
                 const SizedBox(height: 8),
-                Text(
-                  post.originalPost!.content,
-                  maxLines: 5,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                if (original.content.isNotEmpty)
+                  Text(
+                    original.content,
+                    maxLines: 5,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                if (original.imageUrl != null && original.imageUrl!.isNotEmpty)
+                  Padding(
+                    padding: EdgeInsets.only(top: original.content.isNotEmpty ? 8.0 : 0),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8.0),
+                      child: Image.network(original.imageUrl!),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -279,23 +290,51 @@ class _PostCardState extends State<PostCard> {
       );
     }
 
+    // --- Trường hợp bài đăng thường ---
     final long = post.content.length > 200;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          _expanded || !long
-              ? post.content
-              : '${post.content.substring(0, 200)}...',
-        ),
-        if (long)
+        if (post.imageUrl != null && post.imageUrl!.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12.0),
+              child: Image.network(
+                post.imageUrl!,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                loadingBuilder: (context, child, progress) {
+                  if (progress == null) return child;
+                  return AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: Container(
+                      color: Colors.grey[200],
+                      child: const Center(child: CircularProgressIndicator()),
+                    ),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  return const AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: Center(child: Icon(Icons.error, color: Colors.red)),
+                  );
+                },
+              ),
+            ),
+          ),
+        if (post.content.isNotEmpty)
+          Text(
+            _expanded || !long
+                ? post.content
+                : '${post.content.substring(0, 200)}...',
+          ),
+        if (post.content.isNotEmpty && long)
           InkWell(
             onTap: () => setState(() => _expanded = !_expanded),
             child: Text(
               _expanded ? 'Thu gọn' : 'Xem thêm',
-              style: const TextStyle(
-                  color: Colors.blue,
-                  fontWeight: FontWeight.bold),
+              style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
             ),
           ),
       ],
@@ -303,12 +342,8 @@ class _PostCardState extends State<PostCard> {
   }
 
   Widget _buildActions(Post post) {
-    final liked =
-        currentUser != null &&
-            post.likes.contains(currentUser!.uid);
-    final saved =
-        currentUser != null &&
-            post.savers.contains(currentUser!.uid);
+    final liked = currentUser != null && post.likes.contains(currentUser!.uid);
+    final saved = currentUser != null && post.savers.contains(currentUser!.uid);
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -316,9 +351,7 @@ class _PostCardState extends State<PostCard> {
         Row(
           children: [
             _icon(
-              icon: liked
-                  ? Icons.favorite
-                  : Icons.favorite_border,
+              icon: liked ? Icons.favorite : Icons.favorite_border,
               color: liked ? Colors.red : Colors.grey,
               text: post.likes.length.toString(),
               onTap: _toggleLike,
@@ -349,8 +382,7 @@ class _PostCardState extends State<PostCard> {
             InkWell(
               onTap: _openShareSheet,
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 child: Row(
                   children: [
                     Transform.rotate(
@@ -373,11 +405,8 @@ class _PostCardState extends State<PostCard> {
           ],
         ),
         _icon(
-          icon: saved
-              ? Icons.bookmark
-              : Icons.bookmark_border,
-          color:
-          saved ? const Color(0xFF1877F2) : Colors.grey,
+          icon: saved ? Icons.bookmark : Icons.bookmark_border,
+          color: saved ? const Color(0xFF1877F2) : Colors.grey,
           text: '',
           onTap: _toggleSave,
         ),
@@ -394,17 +423,13 @@ class _PostCardState extends State<PostCard> {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding:
-        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         child: Row(
           children: [
             Icon(icon, color: color),
             if (text.isNotEmpty) const SizedBox(width: 4),
             if (text.isNotEmpty)
-              Text(text,
-                  style: TextStyle(
-                      color: color,
-                      fontWeight: FontWeight.w600)),
+              Text(text, style: TextStyle(color: color, fontWeight: FontWeight.w600)),
           ],
         ),
       ),
@@ -420,9 +445,7 @@ class _PostCardState extends State<PostCard> {
         onTap: _showLikes,
         child: Text(
           '${post.likes.length} lượt thích',
-          style: const TextStyle(
-              color: Colors.grey,
-              fontWeight: FontWeight.w500),
+          style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.w500),
         ),
       ),
     );

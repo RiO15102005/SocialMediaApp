@@ -4,7 +4,7 @@ import 'package:timeago/timeago.dart' as timeago;
 import 'firebase_options.dart';
 import 'auth_gate.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
+import 'supabase_credentials.dart'; // Import the new credentials file
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -13,9 +13,10 @@ Future<void> main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
+  // Initialize Supabase with variables from the credentials file
   await Supabase.initialize(
-    url: 'https://okxqoqoosfyljmnmitif.supabase.co',
-    anonKey: 'sb_publishable_sxoTBmL23HrUaYA6Nrbx_Q_alsyRlja',
+    url: supabaseUrl,
+    anonKey: supabaseAnnonKey,
   );
 
   timeago.setLocaleMessages('vi', timeago.ViMessages());
@@ -23,7 +24,6 @@ Future<void> main() async {
 
   runApp(const MyApp());
 }
-
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});

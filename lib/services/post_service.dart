@@ -1,20 +1,60 @@
+import 'dart:io';
+import 'package:path/path.dart' as path;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 import '../models/post_model.dart';
 
 class PostService {
   final _firestore = FirebaseFirestore.instance;
   final _auth = FirebaseAuth.instance;
+  final _supabaseClient = supabase.Supabase.instance.client;
 
   final String postCol = "POST";
   final String commentCol = "COMMENTS";
 
-  Future<void> createPost({required String content}) async {
+  // Sửa lại hàm upload ảnh để không cần user.uid
+  Future<String?> _uploadImage(File imageFile) async {
+    try {
+      final fileExtension = path.extension(imageFile.path);
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}$fileExtension';
+      // Đường dẫn mới, không chứa user id
+      final filePath = 'public/$fileName';
+
+      await _supabaseClient.storage
+          .from('Post_media')
+          .upload(filePath, imageFile);
+
+      final imageUrl = _supabaseClient.storage
+          .from('Post_media')
+          .getPublicUrl(filePath);
+
+      return imageUrl;
+    } on supabase.StorageException catch (e) {
+      print("Lỗi Supabase Storage: ${e.message}");
+      return null;
+    }
+    catch (e) {
+      print("Lỗi không xác định khi tải ảnh lên: $e");
+      return null;
+    }
+  }
+
+
+  Future<void> createPost({required String content, File? imageFile}) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    if (content.trim().isEmpty) {
-      return;
+    if (content.trim().isEmpty && imageFile == null) {
+      return; // Không đăng nếu không có nội dung và không có ảnh
+    }
+    
+    String? imageUrl;
+    if (imageFile != null) {
+        imageUrl = await _uploadImage(imageFile);
+        if (imageUrl == null) {
+            throw Exception("Không thể tải ảnh lên. Vui lòng thử lại.");
+        }
     }
 
     final userDoc = await _firestore.collection('users').doc(user.uid).get();
@@ -23,11 +63,12 @@ class PostService {
     final userAvatar = userDoc.data()?['photoURL'];
     final friends = List<String>.from(userDoc.data()?['friends'] ?? []);
 
-    final newPost = await _firestore.collection(postCol).add({
+    final newPostRef = await _firestore.collection(postCol).add({
       "UID": user.uid,
       "userName": userName,
       "userAvatar": userAvatar,
       "content": content.trim(),
+      "imageUrl": imageUrl, // <-- LƯU IMAGE URL VÀO FIRESTORE
       "likes": [],
       "savers": [],
       "repostedBy": [],
@@ -45,7 +86,7 @@ class PostService {
         "userId": f,
         "senderId": user.uid,
         "senderName": userName,
-        "postId": newPost.id,
+        "postId": newPostRef.id,
         "type": "post",
         "timestamp": Timestamp.now(),
         "isRead": false
